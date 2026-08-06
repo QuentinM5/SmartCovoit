@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "smartcovoit-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -21,6 +21,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.119.0"
   }
 }
