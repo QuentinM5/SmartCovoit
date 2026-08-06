@@ -4,13 +4,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
 
-  // Squelette minimal — pas déployé pour l'instant (cf. brief : "prévoir la
-  // séparation des dossiers", pas l'implémenter en détail). PRIMARY_API_URL
-  // = instance TrueNAS, FALLBACK_API_URL = instance cloud de secours (toutes
-  // deux configurées ici, jamais en dur dans le code, cf. docs/deploiement.md).
+  // PRIMARY_API_URL = instance TrueNAS (OSRM réel), FALLBACK_API_URL =
+  // instance Railway (repli Haversine). Toutes deux configurées ici, jamais
+  // en dur dans le code — cf. docs/deploiement.md.
   "vars": {
-    "PRIMARY_API_URL": "https://changeme-primary.example.com",
-    "FALLBACK_API_URL": "https://changeme-fallback.example.com",
+    "PRIMARY_API_URL": "https://smartcovoitapilocal.qmeyer.fr",
+    "FALLBACK_API_URL": "https://smartcovoit-production.up.railway.app",
     "HEALTH_TIMEOUT_MS": "2000"
   }
 }
