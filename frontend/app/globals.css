@@ -1,26 +1,136 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Mode sombre piloté à la main (classe .dark sur <html>) plutôt que par
+   prefers-color-scheme seul : l'utilisateur doit pouvoir basculer. Tailwind v4
+   ne configure plus ça en JS, la variante se déclare ici. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Le vocabulaire visuel de l'app est celui des plans de transport : des nœuds,
+   des lignes, une séquence. Les deux accents encodent le sens du trajet plutôt
+   que de décorer — indigo quand tout converge, vermillon quand tout rayonne. */
+@theme {
+  --color-paper: #fbfaf7;
+  --color-surface: #ffffff;
+  --color-ink: #14171c;
+  --color-muted: #5a6472;
+  --color-line: #e4e4df;
+
+  --color-inbound: #2b44cc;
+  --color-outbound: #e2570f;
+
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --color-paper: #0e1116;
+  --color-surface: #161a21;
+  --color-ink: #edeff2;
+  --color-muted: #8b96a5;
+  --color-line: #262c35;
+
+  --color-inbound: #7b8cff;
+  --color-outbound: #ff8a3d;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+  }
+
+  /* La bascule de thème ne doit pas clignoter, mais animer chaque propriété de
+     chaque élément coûte cher au scroll — on cible donc les surfaces. */
+  body,
+  header,
+  main,
+  section,
+  aside,
+  input,
+  select,
+  button,
+  [data-surface] {
+    transition:
+      background-color 200ms ease,
+      border-color 200ms ease,
+      color 200ms ease;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-inbound);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Les distances sont des données : chiffres de largeur fixe pour qu'une
+     colonne de kilomètres s'aligne verticalement. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Le fond de carte OSM est clair ; en mode sombre on le désature et on
+   l'inverse plutôt que d'imposer un second jeu de tuiles à télécharger. */
+.dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.7);
+}
+
+.leaflet-container {
+  background: var(--color-line);
+  font-family: var(--font-sans);
+}
+
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent) !important;
+  color: var(--color-muted) !important;
+  font-size: 10px !important;
+}
+
+.leaflet-control-attribution a {
+  color: var(--color-muted) !important;
+}
+
+@keyframes flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-flow {
+  animation: flow 1.4s linear infinite;
+}
+
+.animate-rise {
+  animation: rise 380ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

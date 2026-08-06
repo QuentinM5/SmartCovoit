@@ -3,11 +3,15 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, createEvent, type Direction } from "@/lib/api";
+import { DirectionPicker } from "@/components/direction";
+import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
 
 export default function HomePage() {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [direction, setDirection] = useState<Direction>("ramassage");
+  // La dispersion est le cas le plus courant : on repart d'un lieu commun, et
+  // c'est le moment où personne n'a envie de s'organiser à la main.
+  const [direction, setDirection] = useState<Direction>("dispersion");
   const [depotAddress, setDepotAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -20,82 +24,69 @@ export default function HomePage() {
       const event = await createEvent({ name, direction, depot_address: depotAddress });
       router.push(`/events/${event.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Erreur inattendue.");
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Impossible de joindre le service. Vérifie ta connexion et réessaie.",
+      );
       setSubmitting(false);
     }
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center gap-8 p-8">
-      <div>
-        <h1 className="text-2xl font-semibold">SmartCovoit</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Organise le covoiturage d&rsquo;un événement de groupe : chacun s&rsquo;inscrit avec son
-          adresse, la tournée de chaque conducteur est calculée automatiquement.
-        </p>
-      </div>
+    <>
+      <Header />
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          Nom de l&rsquo;événement
-          <input
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Sortie ski, séminaire..."
-            className="rounded border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
+      <main className="mx-auto w-full max-w-3xl px-5 py-10 sm:py-14">
+        <div className="max-w-lg">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            Qui prend qui, et dans quel ordre.
+          </h1>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted">
+            Crée l&apos;événement, partage le lien. Chacun s&apos;inscrit avec son adresse, et les
+            tournées se calculent toutes seules — au plus court pour l&apos;ensemble du groupe.
+          </p>
+        </div>
 
-        <fieldset className="flex flex-col gap-2 text-sm">
-          <legend className="mb-1">Sens du trajet</legend>
-          <label className="flex items-start gap-2">
+        <form onSubmit={handleSubmit} className="mt-10 flex max-w-lg flex-col gap-6">
+          <Field label="Nom de l'événement">
             <input
-              type="radio"
-              name="direction"
-              className="mt-1"
-              checked={direction === "ramassage"}
-              onChange={() => setDirection("ramassage")}
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Sortie ski, tournoi, mariage…"
+              className={inputClass}
             />
-            <span>
-              <strong>Ramassage</strong> — tout le monde converge vers le point commun
-            </span>
-          </label>
-          <label className="flex items-start gap-2">
+          </Field>
+
+          <DirectionPicker value={direction} onChange={setDirection} />
+
+          <Field
+            label="Point de rendez-vous"
+            hint={
+              direction === "dispersion"
+                ? "L'adresse d'où tout le monde repart."
+                : "L'adresse où tout le monde se retrouve."
+            }
+          >
             <input
-              type="radio"
-              name="direction"
-              className="mt-1"
-              checked={direction === "dispersion"}
-              onChange={() => setDirection("dispersion")}
+              required
+              value={depotAddress}
+              onChange={(e) => setDepotAddress(e.target.value)}
+              placeholder="123 rue Principale, Québec"
+              className={inputClass}
             />
-            <span>
-              <strong>Dispersion</strong> — tout le monde part du point commun
-            </span>
-          </label>
-        </fieldset>
+          </Field>
 
-        <label className="flex flex-col gap-1 text-sm">
-          Adresse du point commun
-          <input
-            required
-            value={depotAddress}
-            onChange={(e) => setDepotAddress(e.target.value)}
-            placeholder="Adresse complète"
-            className="rounded border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
+          {error && <ErrorNote>{error}</ErrorNote>}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
-        >
-          {submitting ? "Création..." : "Créer l’événement"}
-        </button>
-      </form>
-    </main>
+          <div>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Création…" : "Créer l'événement"}
+            </Button>
+          </div>
+        </form>
+      </main>
+    </>
   );
 }

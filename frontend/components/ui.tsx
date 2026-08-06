@@ -1,0 +1,67 @@
+"use client";
+
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { ThemeToggle } from "@/components/theme-toggle";
+
+export function Header({ back = false }: { back?: boolean }) {
+  return (
+    <header className="border-b border-line">
+      <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-5 py-4">
+        <Link href="/" className="flex items-baseline gap-2 transition hover:opacity-70">
+          <span className="text-[15px] font-semibold tracking-tight">SmartCovoit</span>
+          {back && <span className="text-sm text-muted">Retour</span>}
+        </Link>
+        <ThemeToggle />
+      </div>
+    </header>
+  );
+}
+
+export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium">{label}</span>
+      {hint && <span className="mt-0.5 block text-xs text-muted">{hint}</span>}
+      <span className="mt-1.5 block">{children}</span>
+    </label>
+  );
+}
+
+export const inputClass =
+  "w-full rounded-md border border-line bg-surface px-3 py-2 text-sm placeholder:text-muted/70 transition focus:border-ink focus:outline-none";
+
+export function Button({
+  children,
+  variant = "primary",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "quiet" }) {
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45";
+  const styles =
+    variant === "primary"
+      ? "bg-ink text-paper hover:opacity-85"
+      : "border border-line bg-surface hover:border-ink";
+
+  return (
+    <button className={`${base} ${styles}`} {...props}>
+      {children}
+    </button>
+  );
+}
+
+export function ErrorNote({ children }: { children: ReactNode }) {
+  return (
+    <p role="alert" className="text-sm text-outbound">
+      {children}
+    </p>
+  );
+}
