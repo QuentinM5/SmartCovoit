@@ -43,14 +43,14 @@ async def create_event(
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
 ) -> Event:
-    geocoded = await _geocode_or_422(geocoder, body.depot_address)
+    lat, lon = await _locate_or_422(geocoder, body.depot_address, body.coords)
 
     event = Event(
         name=body.name,
         direction=body.direction,
         depot_address=body.depot_address,
-        depot_lat=geocoded.lat,
-        depot_lon=geocoded.lon,
+        depot_lat=lat,
+        depot_lon=lon,
     )
     db.add(event)
     await db.commit()
@@ -71,15 +71,15 @@ async def add_driver(
     geocoder: NominatimClient = Depends(get_geocoder),
 ) -> Driver:
     await _get_event_or_404(db, event_id)
-    geocoded = await _geocode_or_422(geocoder, body.address)
+    lat, lon = await _locate_or_422(geocoder, body.address, body.coords)
 
     driver = Driver(
         event_id=event_id,
         name=body.name,
         seats=body.seats,
         address=body.address,
-        lat=geocoded.lat,
-        lon=geocoded.lon,
+        lat=lat,
+        lon=lon,
     )
     db.add(driver)
     await db.commit()
@@ -95,14 +95,14 @@ async def add_passenger(
     geocoder: NominatimClient = Depends(get_geocoder),
 ) -> Passenger:
     await _get_event_or_404(db, event_id)
-    geocoded = await _geocode_or_422(geocoder, body.address)
+    lat, lon = await _locate_or_422(geocoder, body.address, body.coords)
 
     passenger = Passenger(
         event_id=event_id,
         name=body.name,
         address=body.address,
-        lat=geocoded.lat,
-        lon=geocoded.lon,
+        lat=lat,
+        lon=lon,
     )
     db.add(passenger)
     await db.commit()
@@ -259,8 +259,21 @@ async def _load_event_with_participants(db: AsyncSession, event_id: uuid.UUID) -
     return event
 
 
-async def _geocode_or_422(geocoder: NominatimClient, address: str):
+async def _locate_or_422(
+    geocoder: NominatimClient, address: str, provided: tuple[float, float] | None
+) -> tuple[float, float]:
+    """Position de l'adresse : celle fournie par le client si elle existe,
+    sinon géocodage côté serveur.
+
+    Le champ d'autocomplétion connaît déjà la position exacte du lieu choisi.
+    La réutiliser évite un second géocodage sur le seul libellé texte, qui peut
+    retomber sur une commune homonyme — et épargne un appel réseau au passage.
+    """
+    if provided is not None:
+        return provided
+
     try:
-        return await geocoder.geocode(address)
+        result = await geocoder.geocode(address)
     except GeocodingError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return (result.lat, result.lon)

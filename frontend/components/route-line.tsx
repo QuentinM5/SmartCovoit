@@ -15,12 +15,14 @@ export function RouteLine({
   distanceM,
   stops,
   index,
+  onHoverChange,
 }: {
   driverName: string;
   seats: number;
   distanceM: number;
   stops: ResolvedStop[];
   index: number;
+  onHoverChange?: (active: boolean) => void;
 }) {
   const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
   const mapsUrl = googleMapsDirectionsUrl(stops);
@@ -30,7 +32,11 @@ export function RouteLine({
   return (
     <article
       data-surface
-      className="animate-rise rounded-lg border border-line bg-surface p-4"
+      onMouseEnter={() => onHoverChange?.(true)}
+      onMouseLeave={() => onHoverChange?.(false)}
+      onFocus={() => onHoverChange?.(true)}
+      onBlur={() => onHoverChange?.(false)}
+      className="animate-rise rounded-lg border border-line bg-surface p-4 transition hover:border-muted"
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -52,10 +58,16 @@ export function RouteLine({
       <ol className="mt-3">
         {stops.map((stop, i) => {
           const last = i === stops.length - 1;
+          // Même numéro que la pastille sur la carte : c'est ce qui permet de
+          // faire le lien entre la liste et le trajet dessiné.
+          const passengerNumber =
+            stop.kind === "passenger"
+              ? stops.slice(0, i + 1).filter((s) => s.kind === "passenger").length
+              : null;
           return (
             <li key={i} className="grid grid-cols-[1rem_1fr_auto] items-start gap-x-3">
               <span className="grid justify-items-center" aria-hidden="true">
-                <StopNode kind={stop.kind} color={color} />
+                <StopNode kind={stop.kind} color={color} number={passengerNumber} />
                 {!last && (
                   <span className="h-6 w-0.5 rounded-full" style={{ backgroundColor: color, opacity: 0.4 }} />
                 )}
@@ -97,7 +109,15 @@ export function RouteLine({
   );
 }
 
-function StopNode({ kind, color }: { kind: ResolvedStop["kind"]; color: string }) {
+function StopNode({
+  kind,
+  color,
+  number,
+}: {
+  kind: ResolvedStop["kind"];
+  color: string;
+  number: number | null;
+}) {
   if (kind === "depot") {
     return (
       <span className="grid size-4 place-items-center rounded-full" style={{ backgroundColor: color }}>
@@ -110,8 +130,10 @@ function StopNode({ kind, color }: { kind: ResolvedStop["kind"]; color: string }
   }
   return (
     <span
-      className="size-3 rounded-full bg-surface"
-      style={{ border: `2.5px solid ${color}`, marginTop: "2px" }}
-    />
+      className="grid size-4 place-items-center rounded-full bg-surface font-mono text-[9px] font-medium leading-none"
+      style={{ border: `2px solid ${color}`, color }}
+    >
+      {number}
+    </span>
   );
 }

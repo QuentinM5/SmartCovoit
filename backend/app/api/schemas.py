@@ -10,7 +10,26 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.solver.model import Direction
 
 
-class EventCreate(BaseModel):
+class Located(BaseModel):
+    """Coordonnées déjà connues de l'adresse saisie.
+
+    Le client d'autocomplétion connaît déjà la position exacte du lieu choisi :
+    la transmettre évite un second géocodage qui pourrait retomber sur une autre
+    commune homonyme. Restent optionnelles — sans elles, l'adresse est géocodée
+    côté serveur comme avant.
+    """
+
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
+
+    @property
+    def coords(self) -> tuple[float, float] | None:
+        if self.lat is None or self.lon is None:
+            return None
+        return (self.lat, self.lon)
+
+
+class EventCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     direction: Direction
     depot_address: str = Field(min_length=1, max_length=500)
@@ -28,7 +47,7 @@ class EventOut(BaseModel):
     created_at: datetime
 
 
-class DriverCreate(BaseModel):
+class DriverCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     seats: int = Field(gt=0, le=20)
     address: str = Field(min_length=1, max_length=500)
@@ -45,7 +64,7 @@ class DriverOut(BaseModel):
     lon: float
 
 
-class PassengerCreate(BaseModel):
+class PassengerCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     address: str = Field(min_length=1, max_length=500)
 

@@ -13,6 +13,7 @@ import {
   type Solution,
 } from "@/lib/api";
 import { DirectionGlyph } from "@/components/direction";
+import { AddressInput, type AddressValue } from "@/components/address-input";
 import { RouteLine } from "@/components/route-line";
 import { RouteMap, type MapRoute } from "@/components/route-map";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
@@ -33,6 +34,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [solveError, setSolveError] = useState<string | null>(null);
   const [solving, setSolving] = useState(false);
+  // Survoler une tournée dans la liste l'isole sur la carte : avec 4 ou 5
+  // véhicules qui se croisent, c'est le seul moyen de suivre un trajet.
+  const [highlighted, setHighlighted] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -214,7 +218,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               </p>
             )}
 
-            <RouteMap routes={mapRoutes} />
+            <RouteMap routes={mapRoutes} highlightedRoute={highlighted} />
 
             <div className="flex flex-col gap-3">
               {solution.routes.map((route, index) => {
@@ -227,6 +231,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     seats={driver?.seats ?? 0}
                     distanceM={route.distance_m}
                     stops={mapRoutes[index]?.stops ?? []}
+                    onHoverChange={(active) => setHighlighted(active ? index : null)}
                   />
                 );
               })}
@@ -252,7 +257,7 @@ function SignupSection({
   const [role, setRole] = useState<Role>("passenger");
   const [name, setName] = useState("");
   const [seats, setSeats] = useState(3);
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState<AddressValue>({ address: "", lat: null, lon: null });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -261,13 +266,14 @@ function SignupSection({
     setError(null);
     setSubmitting(true);
     try {
+      const location = { address: address.address, lat: address.lat, lon: address.lon };
       if (role === "driver") {
-        await addDriver(eventId, { name, seats, address });
+        await addDriver(eventId, { name, seats, ...location });
       } else {
-        await addPassenger(eventId, { name, address });
+        await addPassenger(eventId, { name, ...location });
       }
       setName("");
-      setAddress("");
+      setAddress({ address: "", lat: null, lon: null });
       setSeats(3);
       onAdded();
     } catch (err) {
@@ -347,12 +353,11 @@ function SignupSection({
         </div>
 
         <Field label={addressLabel} hint={addressHint}>
-          <input
+          <AddressInput
             required
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="123 rue Principale, Québec"
-            className={inputClass}
+            onChange={setAddress}
+            placeholder="Commence à taper une adresse…"
           />
         </Field>
 

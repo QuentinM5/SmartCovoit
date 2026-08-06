@@ -98,7 +98,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function createEvent(data: { name: string; direction: Direction; depot_address: string }) {
+/**
+ * `lat`/`lon` accompagnent l'adresse quand elle vient d'une suggestion : le
+ * serveur les utilise telles quelles au lieu de re-géocoder le libellé, ce qui
+ * supprime les confusions entre communes homonymes. Omises, le serveur géocode
+ * comme avant.
+ */
+export interface AddressFields {
+  lat?: number | null;
+  lon?: number | null;
+}
+
+export function createEvent(
+  data: { name: string; direction: Direction; depot_address: string } & AddressFields,
+) {
   return request<EventOut>("/events", { method: "POST", body: JSON.stringify(data) });
 }
 
@@ -106,11 +119,17 @@ export function getEvent(id: string) {
   return request<EventDetail>(`/events/${id}`);
 }
 
-export function addDriver(eventId: string, data: { name: string; seats: number; address: string }) {
+export function addDriver(
+  eventId: string,
+  data: { name: string; seats: number; address: string } & AddressFields,
+) {
   return request<Driver>(`/events/${eventId}/drivers`, { method: "POST", body: JSON.stringify(data) });
 }
 
-export function addPassenger(eventId: string, data: { name: string; address: string }) {
+export function addPassenger(
+  eventId: string,
+  data: { name: string; address: string } & AddressFields,
+) {
   return request<Passenger>(`/events/${eventId}/passengers`, { method: "POST", body: JSON.stringify(data) });
 }
 

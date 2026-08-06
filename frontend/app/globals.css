@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
 
 /* Mode sombre piloté à la main (classe .dark sur <html>) plutôt que par
    prefers-color-scheme seul : l'utilisateur doit pouvoir basculer. Tailwind v4
@@ -76,26 +75,8 @@
   }
 }
 
-/* Le fond de carte OSM est clair ; en mode sombre on le désature et on
-   l'inverse plutôt que d'imposer un second jeu de tuiles à télécharger. */
-.dark .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.7);
-}
-
-.leaflet-container {
-  background: var(--color-line);
-  font-family: var(--font-sans);
-}
-
-.leaflet-control-attribution {
-  background: color-mix(in srgb, var(--color-surface) 85%, transparent) !important;
-  color: var(--color-muted) !important;
-  font-size: 10px !important;
-}
-
-.leaflet-control-attribution a {
-  color: var(--color-muted) !important;
-}
+/* Google Maps applique ses propres styles clair/sombre (cf. route-map.tsx) —
+   plus besoin du filtre CSS qui délavait les tuiles en mode sombre. */
 
 @keyframes flow {
   from {

@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, createEvent, type Direction } from "@/lib/api";
 import { DirectionPicker } from "@/components/direction";
+import { AddressInput, type AddressValue } from "@/components/address-input";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
 
 export default function HomePage() {
@@ -12,7 +13,7 @@ export default function HomePage() {
   // La dispersion est le cas le plus courant : on repart d'un lieu commun, et
   // c'est le moment où personne n'a envie de s'organiser à la main.
   const [direction, setDirection] = useState<Direction>("dispersion");
-  const [depotAddress, setDepotAddress] = useState("");
+  const [depot, setDepot] = useState<AddressValue>({ address: "", lat: null, lon: null });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -21,7 +22,13 @@ export default function HomePage() {
     setError(null);
     setSubmitting(true);
     try {
-      const event = await createEvent({ name, direction, depot_address: depotAddress });
+      const event = await createEvent({
+        name,
+        direction,
+        depot_address: depot.address,
+        lat: depot.lat,
+        lon: depot.lon,
+      });
       router.push(`/events/${event.id}`);
     } catch (err) {
       setError(
@@ -69,12 +76,11 @@ export default function HomePage() {
                 : "L'adresse où tout le monde se retrouve."
             }
           >
-            <input
+            <AddressInput
               required
-              value={depotAddress}
-              onChange={(e) => setDepotAddress(e.target.value)}
-              placeholder="123 rue Principale, Québec"
-              className={inputClass}
+              value={depot}
+              onChange={setDepot}
+              placeholder="Commence à taper une adresse…"
             />
           </Field>
 

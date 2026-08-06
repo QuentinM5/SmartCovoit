@@ -63,12 +63,39 @@ Reste à faire, à ta discrétion : un domaine plus lisible que
 tester le failover réel (couper le TrueNAS et vérifier que `solve` bascule
 sur Railway avec `matrix_source: "haversine"`).
 
-## 5. Frontend
+## 5. Frontend — fait ✅
 
-Déploiement à part (Cloudflare Pages, Vercel, ou statique) — hors scope de
-cette session. Point important : `NEXT_PUBLIC_API_URL` doit pointer vers
-l'URL du Worker (étape 4), jamais directement vers une des deux instances
-backend.
+Déployé sur **Cloudflare Workers** via l'adaptateur officiel
+[OpenNext](https://opennext.js.org/cloudflare) (`@opennextjs/cloudflare`),
+pas en export statique — ça garde `/events/[id]` comme vraie route
+dynamique (rendu à la demande), plutôt que de la transformer en paramètre
+de requête. Détecté et configuré automatiquement par `wrangler deploy`
+depuis `/frontend` (Wrangler reconnaît un projet Next.js sans config et
+installe/configure l'adaptateur tout seul).
+
+**Déployer : `cd frontend && npm run deploy`** — surtout pas `npx wrangler deploy`.
+Depuis que `wrangler.jsonc` existe, `wrangler deploy` ne relance plus le build
+OpenNext : il redéploie tel quel le `.open-next/` précédent, donc une version
+périmée, sans rien signaler. Le script `deploy` enchaîne bien
+`opennextjs-cloudflare build && opennextjs-cloudflare deploy`.
+
+`NEXT_PUBLIC_API_URL` vit dans `frontend/.env.production` (versionné : cette
+valeur finit dans le JS envoyé au navigateur, ce n'est pas un secret) et pointe
+vers le Worker de failover, jamais directement vers une instance backend.
+
+Piège associé : `frontend/.env.local` est chargé **aussi** pendant un build de
+production et prime sur `.env.production` — il avait silencieusement figé
+`http://localhost:8000` dans le bundle déployé. L'override de dev vit donc
+maintenant dans `.env.development.local`, qui n'est lu qu'en développement.
+
+**`https://smartcovoit-frontend.quentinmeyer57570.workers.dev`** — testé :
+page d'accueil, route dynamique `/events/[id]`, et l'URL de l'API est bien
+celle du Worker (vérifié dans le bundle JS envoyé au navigateur).
+
+À noter : OpenNext annonce un support Windows partiel (build possible mais
+« unpredictable failures » selon leur propre avertissement) — a fonctionné
+sans souci ici, mais WSL serait recommandé si des problèmes apparaissent
+plus tard.
 
 ## Résumé des variables
 
@@ -78,6 +105,6 @@ backend.
 | `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (vide sur Railway) (fait ✅) |
 | `NOMINATIM_USER_AGENT` | les deux | Nom d'app + contact réel (fait ✅) |
 | `CORS_ORIGINS` | les deux | URL du frontend déployé (à mettre à jour) |
-| `PRIMARY_API_URL` | Worker | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
-| `FALLBACK_API_URL` | Worker | `https://smartcovoit-production.up.railway.app` (fait ✅) |
-| `NEXT_PUBLIC_API_URL` | Frontend | `https://smartcovoit-worker.quentinmeyer57570.workers.dev` (une fois le frontend déployé) |
+| `PRIMARY_API_URL` | Worker répartiteur | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
+| `FALLBACK_API_URL` | Worker répartiteur | `https://smartcovoit-production.up.railway.app` (fait ✅) |
+| `NEXT_PUBLIC_API_URL` | Frontend | `https://smartcovoit-worker.quentinmeyer57570.workers.dev` (fait ✅) |
