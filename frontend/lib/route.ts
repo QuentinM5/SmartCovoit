@@ -52,10 +52,16 @@ export function resolveStops(route: Route, event: EventDetail): ResolvedStop[] {
     }
 
     if (!driver) return [];
+    // Le domicile du conducteur est son point de départ en ramassage, mais son
+    // point d'arrivée en dispersion. La formulation « chez X » évite au passage
+    // l'élision fautive de « Départ de Olivier ».
     return [
       {
         kind: "driver",
-        label: `Départ de ${driver.name}`,
+        label:
+          event.direction === "dispersion"
+            ? `Retour chez ${driver.name}`
+            : `Départ de chez ${driver.name}`,
         lat: driver.lat,
         lon: driver.lon,
         cumulativeDistanceM: stop.cumulative_distance_m,

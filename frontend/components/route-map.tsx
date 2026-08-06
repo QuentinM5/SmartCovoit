@@ -28,6 +28,8 @@ export const ROUTE_COLORS = [
 export interface MapRoute {
   driverName: string;
   stops: ResolvedStop[];
+  /** Tracé routier réel ; à défaut, les arrêts sont reliés en ligne droite. */
+  geometry?: number[][] | null;
 }
 
 function markerHtml(kind: ResolvedStop["kind"], color: string): string {
@@ -48,7 +50,11 @@ export function RouteMap({ routes }: { routes: MapRoute[] }) {
   // Signature stable : évite de reconstruire les calques à chaque rendu quand
   // le tableau `routes` change d'identité sans changer de contenu.
   const signature = JSON.stringify(
-    routes.map((r) => [r.driverName, r.stops.map((s) => [s.lat, s.lon, s.kind])]),
+    routes.map((r) => [
+      r.driverName,
+      r.stops.map((s) => [s.lat, s.lon, s.kind]),
+      r.geometry?.length ?? 0,
+    ]),
   );
 
   useEffect(() => {
@@ -95,10 +101,23 @@ export function RouteMap({ routes }: { routes: MapRoute[] }) {
 
       routes.forEach((route, index) => {
         const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
-        const points = route.stops.map((s) => [s.lat, s.lon] as [number, number]);
-        if (points.length === 0) return;
+        const stopPoints = route.stops.map((s) => [s.lat, s.lon] as [number, number]);
+        if (stopPoints.length === 0) return;
 
-        L.polyline(points, { color, weight: 3.5, opacity: 0.9 }).addTo(layers);
+        // Le tracé routier réel quand OSRM l'a fourni ; sinon on relie les
+        // arrêts en ligne droite, et le trait pointillé dit que c'est un
+        // schéma, pas un chemin praticable.
+        const hasGeometry = Array.isArray(route.geometry) && route.geometry.length > 1;
+        const line = hasGeometry
+          ? (route.geometry as number[][]).map((p) => [p[0], p[1]] as [number, number])
+          : stopPoints;
+
+        L.polyline(line, {
+          color,
+          weight: 3.5,
+          opacity: 0.9,
+          dashArray: hasGeometry ? undefined : "6 7",
+        }).addTo(layers);
 
         route.stops.forEach((stop) => {
           bounds.extend([stop.lat, stop.lon]);

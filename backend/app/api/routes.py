@@ -7,6 +7,7 @@ inscriptions déjà faites sans dépendre d'un état client volatile.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import anyio
@@ -156,11 +157,21 @@ async def solve_event(
     passenger_uuid_by_str = {str(p.id): p.id for p in event.passengers}
     passenger_name_by_str = {str(p.id): p.name for p in event.passengers}
 
+    # Tracés routiers réels, en parallèle : purement pour l'affichage, et
+    # renvoyés à `None` un par un si OSRM ne suit pas (cf. FallbackMatrixProvider).
+    geometries = await asyncio.gather(
+        *(
+            matrix_provider.route_geometry([coords[stop.node] for stop in route.stops])
+            for route in solution.routes
+        )
+    )
+
     routes_out = [
         schemas.RouteOut(
             driver_id=driver_uuid_by_str[route.driver_id],
             driver_name=route.driver_name,
             distance_m=route.distance_m,
+            geometry=geometry,
             stops=[
                 schemas.StopOut(
                     node=stop.node,
@@ -175,7 +186,7 @@ async def solve_event(
                 for stop in route.stops
             ],
         )
-        for route in solution.routes
+        for route, geometry in zip(solution.routes, geometries)
     ]
 
     record = SolutionRecord(

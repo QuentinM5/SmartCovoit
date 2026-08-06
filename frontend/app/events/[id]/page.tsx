@@ -77,6 +77,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     return solution.routes.map((route) => ({
       driverName: route.driver_name,
       stops: resolveStops(route, event),
+      geometry: route.geometry,
     }));
   }, [event, solution]);
 
@@ -208,7 +209,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             {solution.matrix_source === "haversine" && (
               <p className="rounded-md border border-line bg-surface px-3 py-2 text-xs leading-relaxed text-muted">
                 Distances estimées à vol d&apos;oiseau : le service de routage n&apos;était pas
-                joignable. L&apos;ordre de passage reste valable, les kilomètres sont approximatifs.
+                joignable. L&apos;ordre de passage reste valable, les kilomètres sont approximatifs
+                et la carte relie les arrêts en pointillé plutôt que par la route.
               </p>
             )}
 
@@ -295,7 +297,7 @@ function SignupSection({
               return (
                 <label
                   key={value}
-                  className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition ${
+                  className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-inbound ${
                     selected
                       ? "border-ink bg-ink text-paper"
                       : "border-line text-muted hover:border-muted"

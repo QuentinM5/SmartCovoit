@@ -49,6 +49,27 @@ export function DirectionGlyph({
         />
       ))}
 
+      {/* Chevrons : sans eux, les deux schémas sont identiques à l'arrêt et
+          seule l'animation les distingue — invisible sur une capture, pour qui
+          survole vite, ou en `prefers-reduced-motion`. */}
+      {SPOKES.map((spoke, i) => {
+        const from = outbound ? CENTER : spoke;
+        const to = outbound ? spoke : CENTER;
+        const angle = (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
+        return (
+          <path
+            key={i}
+            d="M -3 -3 L 1.5 0 L -3 3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            transform={`translate(${(spoke.x + CENTER.x) / 2} ${(spoke.y + CENTER.y) / 2}) rotate(${angle})`}
+          />
+        );
+      })}
+
       {SPOKES.map((spoke, i) => (
         <circle
           key={i}
@@ -99,7 +120,9 @@ export function DirectionPicker({
           <label
             key={option.value}
             data-surface
-            className={`group relative cursor-pointer rounded-lg border p-3 transition ${
+            // Le radio est en sr-only : sans `has-[:focus-visible]`, un
+            // utilisateur au clavier ne verrait pas quelle option a le focus.
+            className={`group relative cursor-pointer rounded-lg border p-3 transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-inbound ${
               selected
                 ? "border-current bg-surface " + accent
                 : "border-line bg-surface text-muted hover:border-muted"

@@ -12,7 +12,7 @@ import logging
 
 from app.distance.haversine import HaversineProvider
 from app.distance.osrm import OSRMError, OSRMProvider
-from app.distance.types import Coord, MatrixProvider, MatrixResult
+from app.distance.types import Coord, MatrixProvider, MatrixResult, Polyline
 
 logger = logging.getLogger(__name__)
 
@@ -42,3 +42,19 @@ class FallbackMatrixProvider:
                 source="haversine",
                 fallback_reason=str(exc),
             )
+
+    async def route_geometry(self, coords: list[Coord]) -> Polyline | None:
+        """Tracé routier réel, ou `None` si indisponible.
+
+        Purement décoratif : sans OSRM la carte relie les arrêts en ligne
+        droite, ce qui reste juste sur l'ordre de passage. Un échec ici ne doit
+        donc jamais faire échouer un calcul de tournées.
+        """
+        if self.osrm is None:
+            return None
+
+        try:
+            return await self.osrm.route_geometry(coords)
+        except OSRMError as exc:
+            logger.warning("Tracé routier indisponible, lignes droites : %s", exc)
+            return None

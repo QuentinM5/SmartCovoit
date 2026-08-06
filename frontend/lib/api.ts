@@ -53,6 +53,12 @@ export interface Route {
   driver_name: string;
   distance_m: number;
   stops: Stop[];
+  /**
+   * Tracé routier réel, suite de points [lat, lon]. Absent quand OSRM n'est pas
+   * disponible (ou pour une solution calculée avant l'ajout de ce champ) : la
+   * carte relie alors les arrêts en ligne droite.
+   */
+  geometry?: number[][] | null;
 }
 
 export interface Solution {

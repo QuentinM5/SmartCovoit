@@ -7,6 +7,9 @@ from typing import Literal, Protocol
 
 MatrixSource = Literal["osrm", "haversine"]
 
+# Suite de points (lat, lon) décrivant un tracé sur la carte.
+Polyline = list[list[float]]
+
 
 @dataclass(frozen=True)
 class Coord:

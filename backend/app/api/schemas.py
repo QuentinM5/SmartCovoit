@@ -82,6 +82,11 @@ class RouteOut(BaseModel):
     driver_name: str
     distance_m: int
     stops: list[StopOut]
+    # Tracé routier réel (suite de points [lat, lon]) pour l'affichage sur la
+    # carte. Absent si OSRM n'est pas disponible — le client relie alors les
+    # arrêts en ligne droite. Optionnel aussi pour rester compatible avec les
+    # solutions déjà stockées en base avant l'ajout de ce champ.
+    geometry: list[list[float]] | None = None
 
 
 class SolutionOut(BaseModel):

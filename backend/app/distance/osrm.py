@@ -1,4 +1,4 @@
-"""Provider de matrice de distances via un service OSRM (`table` endpoint).
+"""Client OSRM : matrice de distances (`table`) et tracé routier (`route`).
 
 Ne décide jamais de replier sur Haversine lui-même — il échoue simplement
 (exception) et laisse `FallbackMatrixProvider` (fallback.py) gérer la
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import httpx
 
-from app.distance.types import Coord, MatrixResult
+from app.distance.types import Coord, MatrixResult, Polyline
 
 
 class OSRMError(Exception):
@@ -61,3 +61,43 @@ class OSRMProvider:
             result.append(out_row)
 
         return MatrixResult(distances=result, source="osrm")
+
+    async def route_geometry(self, coords: list[Coord]) -> Polyline:
+        """Tracé routier réel passant par `coords` dans l'ordre donné.
+
+        Sert uniquement à l'affichage : les distances font foi côté solveur et
+        viennent de `matrix()`. `overview=simplified` suffit largement pour une
+        carte et évite de transporter des milliers de points par tournée.
+        """
+        if len(coords) < 2:
+            return []
+
+        coord_str = ";".join(f"{c.lon},{c.lat}" for c in coords)
+        url = f"{self.base_url}/route/v1/driving/{coord_str}"
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_s) as client:
+                response = await client.get(
+                    url, params={"overview": "simplified", "geometries": "geojson"}
+                )
+        except httpx.HTTPError as exc:
+            raise OSRMError(f"OSRM injoignable ({self.base_url}) : {exc}") from exc
+
+        if response.status_code != 200:
+            raise OSRMError(f"OSRM a répondu {response.status_code} sur {url}")
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise OSRMError("Réponse OSRM non JSON") from exc
+
+        routes = payload.get("routes") or []
+        if not routes:
+            raise OSRMError(f"Aucun tracé renvoyé par OSRM (code={payload.get('code')})")
+
+        coordinates = (routes[0].get("geometry") or {}).get("coordinates")
+        if not coordinates:
+            raise OSRMError("Tracé OSRM sans coordonnées")
+
+        # GeoJSON est en (lon, lat) ; le reste de l'app raisonne en (lat, lon).
+        return [[float(lat), float(lon)] for lon, lat in coordinates]

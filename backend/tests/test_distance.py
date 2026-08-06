@@ -85,3 +85,50 @@ async def test_fallback_goes_directly_to_haversine_when_osrm_not_configured():
 
     assert result.source == "haversine"
     assert result.fallback_reason is None
+
+
+# --- Tracé routier (route_geometry) ---------------------------------------
+
+OSRM_ROUTE_OK = {
+    "code": "Ok",
+    # GeoJSON est en (lon, lat) : la conversion vers (lat, lon) est le cœur du test.
+    "routes": [{"geometry": {"coordinates": [[2.3522, 48.8566], [3.0, 48.0], [4.8357, 45.7640]]}}],
+}
+
+
+async def test_route_geometry_converts_geojson_to_lat_lon():
+    with respx.mock(base_url="http://osrm.local") as router:
+        router.get(re.compile(r"/route/.*")).mock(return_value=httpx.Response(200, json=OSRM_ROUTE_OK))
+        provider = OSRMProvider(base_url="http://osrm.local")
+        geometry = await provider.route_geometry(COORDS)
+
+    assert geometry[0] == [48.8566, 2.3522]
+    assert geometry[-1] == [45.7640, 4.8357]
+
+
+async def test_route_geometry_is_none_when_osrm_not_configured():
+    provider = FallbackMatrixProvider(osrm=None)
+    assert await provider.route_geometry(COORDS) is None
+
+
+async def test_route_geometry_is_none_when_osrm_fails():
+    """Un tracé indisponible ne doit jamais faire échouer un calcul : la carte
+    retombe simplement sur des lignes droites."""
+    with respx.mock(base_url="http://osrm.local") as router:
+        router.get(re.compile(r"/route/.*")).mock(side_effect=httpx.ConnectError("refused"))
+        provider = FallbackMatrixProvider(osrm=OSRMProvider(base_url="http://osrm.local"))
+        assert await provider.route_geometry(COORDS) is None
+
+
+async def test_route_geometry_is_none_when_osrm_returns_no_route():
+    with respx.mock(base_url="http://osrm.local") as router:
+        router.get(re.compile(r"/route/.*")).mock(
+            return_value=httpx.Response(200, json={"code": "NoRoute", "routes": []})
+        )
+        provider = FallbackMatrixProvider(osrm=OSRMProvider(base_url="http://osrm.local"))
+        assert await provider.route_geometry(COORDS) is None
+
+
+async def test_route_geometry_empty_for_single_point():
+    provider = OSRMProvider(base_url="http://osrm.local")
+    assert await provider.route_geometry([PARIS]) == []
