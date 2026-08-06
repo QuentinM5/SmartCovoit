@@ -8,7 +8,7 @@
   // instance Railway (repli Haversine). Toutes deux configurées ici, jamais
   // en dur dans le code — cf. docs/deploiement.md.
   "vars": {
-    "PRIMARY_API_URL": "https://smartcovoitapilocal.qmeyer.fr",
+    "PRIMARY_API_URL": "https://smartcovoitlocalapi.qmeyer.fr",
     "FALLBACK_API_URL": "https://smartcovoit-production.up.railway.app",
     "HEALTH_TIMEOUT_MS": "2000"
   }

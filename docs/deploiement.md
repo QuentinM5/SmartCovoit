@@ -28,7 +28,7 @@ Exposé publiquement via le tunnel Cloudflare existant du NAS (`TrueNAS`,
 services du NAS (route publiée dans la config du tunnel + CNAME DNS vers
 `<tunnel-id>.cfargotunnel.com`, pas d'application Access dessus) :
 
-**`https://smartcovoitapilocal.qmeyer.fr`** — `/health` et `/docs` répondent, testé
+**`https://smartcovoitlocalapi.qmeyer.fr`** — `/health` et `/docs` répondent, testé
 de bout en bout (création d'événement, conducteur, passager, solve avec
 distances OSRM réelles) depuis l'extérieur du réseau local.
 
@@ -78,6 +78,6 @@ backend.
 | `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (vide sur Railway) (fait ✅) |
 | `NOMINATIM_USER_AGENT` | les deux | Nom d'app + contact réel (fait ✅) |
 | `CORS_ORIGINS` | les deux | URL du frontend déployé (à mettre à jour) |
-| `PRIMARY_API_URL` | Worker | `https://smartcovoitapilocal.qmeyer.fr` (fait ✅) |
+| `PRIMARY_API_URL` | Worker | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
 | `FALLBACK_API_URL` | Worker | `https://smartcovoit-production.up.railway.app` (fait ✅) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `https://smartcovoit-worker.quentinmeyer57570.workers.dev` (une fois le frontend déployé) |
