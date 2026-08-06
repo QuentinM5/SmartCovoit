@@ -1,0 +1,34 @@
+# Image backend — FastAPI + OR-Tools.
+#
+# Multi-stage : les dépendances (dont OR-Tools, volumineux) sont installées
+# dans un stage séparé pour garder l'image finale plus légère et profiter du
+# cache Docker quand seul le code applicatif change.
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir --upgrade pip
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# libpq nécessaire à l'exécution pour certains outils clients Postgres ;
+# asyncpg lui-même est pur Python + C compilé au build (déjà dans les wheels).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+ENV PYTHONUNBUFFERED=1
+
+COPY backend/ .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,58 @@
+# Dev local. `docker compose -f infra/docker-compose.yml up` suffit pour le
+# backend + un Postgres jetable. Le service OSRM est sous un profil — il ne
+# démarre pas par défaut (nécessite des données pré-traitées, cf.
+# /docs/osrm.md) : `docker compose -f infra/docker-compose.yml --profile osrm up`.
+#
+# `env_file` injecte tel quel le contenu de .env dans le conteneur backend.
+# Si DATABASE_URL y est défini (ex. vers Neon), c'est cette valeur que
+# process voit. S'il est absent, le conteneur n'a simplement pas la variable
+# — c'est alors le défaut Python de Settings.database_url (app/core/config.py)
+# qui s'applique, à savoir le service `db` ci-dessous. Volontairement pas de
+# bloc `environment: ${VAR:-default}` ici : cette substitution est résolue
+# par Compose lui-même à partir de son propre `.env` (celui du dossier
+# `infra/`, pas la racine), ce qui écraserait silencieusement la valeur
+# injectée par env_file — les défauts vivent donc côté application, pas ici.
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: smartcovoit
+      POSTGRES_PASSWORD: smartcovoit
+      POSTGRES_DB: smartcovoit
+    ports:
+      - "5432:5432"
+    volumes:
+      - smartcovoit_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartcovoit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  osrm:
+    image: osrm/osrm-backend:latest
+    profiles: ["osrm"]
+    ports:
+      - "5001:5000"
+    volumes:
+      - ../osrm-data:/data
+    # Nécessite un .osrm pré-traité dans ../osrm-data (cf. /docs/osrm.md).
+    command: osrm-routed --algorithm mld /data/map.osrm
+
+volumes:
+  smartcovoit_pgdata:
