@@ -12,7 +12,9 @@ import {
   getSolution,
   solveEvent,
   type Direction,
+  type Driver,
   type EventDetail,
+  type Passenger,
   type Solution,
 } from "@/lib/api";
 import { DirectionGlyph } from "@/components/direction";
@@ -69,20 +71,100 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     refresh();
   }, [refresh]);
 
+  /**
+   * Mise à jour optimiste : la ligne disparaît de la liste dès le clic sur
+   * « Confirmer », avant même que la requête n'atteigne le serveur — la
+   * suppression réelle tourne en arrière-plan. En cas d'échec, on remet
+   * uniquement la personne retirée (pas tout l'objet `event`), pour ne pas
+   * écraser une autre modification optimiste faite entre-temps.
+   */
   async function handleRemove(kind: Role, participantId: string) {
     setRosterError(null);
+    const removed =
+      kind === "driver"
+        ? event?.drivers.find((d) => d.id === participantId)
+        : event?.passengers.find((p) => p.id === participantId);
+
+    setEvent((current) => {
+      if (!current) return current;
+      return kind === "driver"
+        ? { ...current, drivers: current.drivers.filter((d) => d.id !== participantId) }
+        : { ...current, passengers: current.passengers.filter((p) => p.id !== participantId) };
+    });
+    // La dernière solution calculée référence potentiellement ce
+    // participant : elle n'est plus exacte, on repart de l'état « à
+    // calculer » plutôt que d'afficher quelque chose de trompeur.
+    setSolution(null);
+
     try {
       if (kind === "driver") await deleteDriver(id, participantId);
       else await deletePassenger(id, participantId);
-      await refresh();
-      // La dernière solution calculée référence un participant qui vient de
-      // disparaître : elle n'est plus exacte, on repart de l'état « à
-      // calculer » plutôt que d'afficher quelque chose de trompeur.
-      // `refresh()` la recharge telle qu'elle est encore en base — on
-      // l'efface donc après coup, pas avant.
-      setSolution(null);
     } catch (err) {
+      if (removed) {
+        setEvent((current) => {
+          if (!current) return current;
+          return kind === "driver"
+            ? { ...current, drivers: [...current.drivers, removed as Driver] }
+            : { ...current, passengers: [...current.passengers, removed as Passenger] };
+        });
+      }
       setRosterError(networkMessage(err, "La suppression n'a pas abouti. Réessaie."));
+    }
+  }
+
+  /**
+   * Même principe côté inscription : la personne apparaît dans la liste
+   * avec un id provisoire dès la soumission du formulaire, avant la réponse
+   * du serveur. `refresh()` remplace ensuite cette entrée provisoire par la
+   * version serveur (id définitif) une fois la requête aboutie.
+   */
+  async function handleAddParticipant(
+    role: Role,
+    data: { name: string; seats: number; address: string; lat: number | null; lon: number | null },
+  ): Promise<void> {
+    const tempId = `optimistic-${crypto.randomUUID()}`;
+
+    setEvent((current) => {
+      if (!current) return current;
+      if (role === "driver") {
+        const optimisticDriver: Driver = {
+          id: tempId,
+          name: data.name,
+          seats: data.seats,
+          address: data.address,
+          lat: data.lat ?? 0,
+          lon: data.lon ?? 0,
+        };
+        return { ...current, drivers: [...current.drivers, optimisticDriver] };
+      }
+      const optimisticPassenger: Passenger = {
+        id: tempId,
+        name: data.name,
+        address: data.address,
+        lat: data.lat ?? 0,
+        lon: data.lon ?? 0,
+      };
+      return { ...current, passengers: [...current.passengers, optimisticPassenger] };
+    });
+    setSolution(null);
+
+    try {
+      if (role === "driver") {
+        await addDriver(id, { name: data.name, seats: data.seats, address: data.address, lat: data.lat, lon: data.lon });
+      } else {
+        await addPassenger(id, { name: data.name, address: data.address, lat: data.lat, lon: data.lon });
+      }
+      await refresh();
+    } catch (err) {
+      setEvent((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          drivers: current.drivers.filter((d) => d.id !== tempId),
+          passengers: current.passengers.filter((p) => p.id !== tempId),
+        };
+      });
+      throw err;
     }
   }
 
@@ -152,7 +234,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           </div>
         </section>
 
-        <SignupSection eventId={id} direction={event.direction} onAdded={refresh} />
+        <SignupSection direction={event.direction} onAdd={handleAddParticipant} />
 
         <section>
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -318,13 +400,14 @@ function addressCopy(role: Role, direction: Direction): { label: string; hint: s
 }
 
 function SignupSection({
-  eventId,
   direction,
-  onAdded,
+  onAdd,
 }: {
-  eventId: string;
   direction: Direction;
-  onAdded: () => void;
+  onAdd: (
+    role: Role,
+    data: { name: string; seats: number; address: string; lat: number | null; lon: number | null },
+  ) => Promise<void>;
 }) {
   const [role, setRole] = useState<Role>("passenger");
   const [name, setName] = useState("");
@@ -332,7 +415,6 @@ function SignupSection({
   const [address, setAddress] = useState<AddressValue>({ address: "", lat: null, lon: null });
   const [addressAvailable, setAddressAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   const { label: addressLabel, hint: addressHint } = addressCopy(role, direction);
   const addressIncomplete = needsSelection(address, addressAvailable);
@@ -341,24 +423,21 @@ function SignupSection({
     e.preventDefault();
     if (addressIncomplete) return;
     setError(null);
-    setSubmitting(true);
+
+    const entry = { name, seats, address: address.address, lat: address.lat, lon: address.lon };
+    // Le formulaire se vide tout de suite : la personne apparaît déjà dans
+    // la liste « Inscrits » ci-dessous (mise à jour optimiste côté parent),
+    // pas besoin d'attendre le serveur pour rendre la main.
+    setName("");
+    setAddress({ address: "", lat: null, lon: null });
+    setSeats(3);
+
     try {
-      const location = { address: address.address, lat: address.lat, lon: address.lon };
-      if (role === "driver") {
-        await addDriver(eventId, { name, seats, ...location });
-      } else {
-        await addPassenger(eventId, { name, ...location });
-      }
-      setName("");
-      setAddress({ address: "", lat: null, lon: null });
-      setSeats(3);
-      onAdded();
+      await onAdd(role, entry);
     } catch (err) {
       setError(
         networkMessage(err, "L'inscription n'a pas abouti. Vérifie l'adresse et réessaie."),
       );
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -442,8 +521,8 @@ function SignupSection({
         {error && <ErrorNote>{error}</ErrorNote>}
 
         <div>
-          <Button type="submit" variant="quiet" disabled={submitting || addressIncomplete}>
-            {submitting ? "Inscription…" : "M'inscrire"}
+          <Button type="submit" variant="quiet" disabled={addressIncomplete}>
+            M&apos;inscrire
           </Button>
         </div>
       </form>

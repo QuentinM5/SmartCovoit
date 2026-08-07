@@ -7,9 +7,13 @@
   // PRIMARY_API_URL = instance TrueNAS (OSRM réel), FALLBACK_API_URL =
   // instance Railway (repli Haversine). Toutes deux configurées ici, jamais
   // en dur dans le code — cf. docs/deploiement.md.
+  //
+  // REQUEST_TIMEOUT_MS : filet de sécurité si le primaire reste sans
+  // réponse (au-dessus de SOLVER_TIME_LIMIT_S côté backend pour ne jamais
+  // couper un /solve légitimement long).
   "vars": {
     "PRIMARY_API_URL": "https://smartcovoitlocalapi.qmeyer.fr",
     "FALLBACK_API_URL": "https://smartcovoit-production.up.railway.app",
-    "HEALTH_TIMEOUT_MS": "2000"
+    "REQUEST_TIMEOUT_MS": "12000"
   }
 }
