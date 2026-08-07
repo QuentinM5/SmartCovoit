@@ -158,7 +158,12 @@ class GoogleRoutesProvider:
                     continue  # comptera comme manquant plus haut, pas une erreur isolée
                 i = origin_list[element["originIndex"]]
                 j = dest_list[element["destinationIndex"]]
-                distance_m = int(element["distanceMeters"])
+                # `distanceMeters` est un entier proto3 : à 0 (la diagonale
+                # origine == destination, ou deux points à la même position),
+                # la sérialisation JSON de protobuf omet le champ plutôt que
+                # d'envoyer `0` explicitement — absent ne veut donc pas dire
+                # malformé ici, contrairement à originIndex/destinationIndex.
+                distance_m = int(element.get("distanceMeters", 0))
                 duration_s = _parse_duration(element["duration"])
             except (KeyError, IndexError, TypeError) as exc:
                 raise GoogleRoutesError(f"Élément Google Routes malformé : {element!r:.200}") from exc

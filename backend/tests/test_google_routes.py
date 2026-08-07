@@ -126,3 +126,38 @@ async def test_raises_on_malformed_element():
         )
         with pytest.raises(GoogleRoutesError, match="malformé"):
             await GoogleRoutesProvider(api_key="k").matrix([Coord(0, 0), Coord(1, 1)])
+
+
+async def test_diagonal_element_with_omitted_zero_distance_is_not_malformed():
+    """Reproduit un cas réel observé en production : Google renvoie parfois
+    l'élément diagonal (origine == destination) avec `duration: "0s"` mais
+    SANS `distanceMeters` du tout — la sérialisation JSON de protobuf omet
+    les champs scalaires à leur valeur par défaut (0). Absent ne veut pas
+    dire malformé ici, seulement "zéro"."""
+    with respx.mock() as router:
+        router.post(MATRIX_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {"originIndex": 0, "destinationIndex": 0, "duration": "0s", "condition": "ROUTE_EXISTS"},
+                    {
+                        "originIndex": 0,
+                        "destinationIndex": 1,
+                        "distanceMeters": 500,
+                        "duration": "60s",
+                        "condition": "ROUTE_EXISTS",
+                    },
+                    {
+                        "originIndex": 1,
+                        "destinationIndex": 0,
+                        "distanceMeters": 500,
+                        "duration": "65s",
+                        "condition": "ROUTE_EXISTS",
+                    },
+                ],
+            )
+        )
+        result = await GoogleRoutesProvider(api_key="k").matrix([Coord(0, 0), Coord(1, 1)])
+
+    assert result.distances[0][0] == 0
+    assert result.durations[0][0] == 0
