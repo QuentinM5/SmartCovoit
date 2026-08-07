@@ -12,8 +12,11 @@
  * suppression, création d'événement...). `REQUEST_TIMEOUT_MS` sert
  * uniquement de filet de sécurité contre une connexion qui resterait
  * ouverte sans répondre (le cas d'un backend injoignable échoue déjà vite,
- * bien avant ce délai) — fixé au-dessus de `SOLVER_TIME_LIMIT_S` (10s côté
- * backend) pour ne jamais couper un `/solve` légitimement long.
+ * bien avant ce délai) — fixé largement au-dessus de `SOLVER_TIME_LIMIT_S`
+ * (10s) + appel Google Routes + tracés OSRM par tournée, pour ne pas
+ * basculer sur Railway (sans OSRM, donc sans tracé réel) simplement parce
+ * qu'un `/solve` à plusieurs passagers a mis un peu plus de temps que prévu
+ * sur le matériel partagé du TrueNAS.
  *
  * Pas de logique de cache ni de sticky session ici — volontairement basique,
  * cf. brief : "pas besoin de l'implémenter en détail maintenant, juste
@@ -54,7 +57,7 @@ async function proxy(baseUrl: string, request: Request): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const timeoutMs = Number(env.REQUEST_TIMEOUT_MS) || 12000;
+    const timeoutMs = Number(env.REQUEST_TIMEOUT_MS) || 25000;
 
     // `request.clone()` avant la première tentative : le corps d'une requête
     // (POST /events, /drivers, /passengers...) ne se lit qu'une fois. Sans

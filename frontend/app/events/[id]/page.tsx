@@ -19,9 +19,11 @@ import {
 } from "@/lib/api";
 import { DirectionGlyph } from "@/components/direction";
 import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
+import { CopyLinkButton } from "@/components/copy-link-button";
 import { DeleteButton } from "@/components/delete-button";
 import { RouteLine } from "@/components/route-line";
 import { RouteMap, type MapRoute } from "@/components/route-map";
+import { SolvingProgress } from "@/components/solving-progress";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
 import { formatDistance, formatDuration, resolveStops } from "@/lib/route";
 
@@ -219,18 +221,21 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-5 py-8 sm:py-12">
         <section>
-          <div className="flex items-start gap-4">
-            <DirectionGlyph
-              direction={event.direction}
-              className={`mt-1 h-10 w-14 shrink-0 ${dispersion ? "text-outbound" : "text-inbound"}`}
-            />
-            <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
-              <p className="mt-1 text-sm text-muted">
-                {dispersion ? "Dispersion depuis" : "Ramassage vers"}{" "}
-                <span className="text-ink">{event.depot_address}</span>
-              </p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <DirectionGlyph
+                direction={event.direction}
+                className={`mt-1 h-10 w-14 shrink-0 ${dispersion ? "text-outbound" : "text-inbound"}`}
+              />
+              <div className="min-w-0">
+                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
+                <p className="mt-1 text-sm text-muted">
+                  {dispersion ? "Dispersion depuis" : "Ramassage vers"}{" "}
+                  <span className="text-ink">{event.depot_address}</span>
+                </p>
+              </div>
             </div>
+            <CopyLinkButton className="mt-1" />
           </div>
         </section>
 
@@ -246,7 +251,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               {event.drivers.length > 0 && (
                 <>
                   <span aria-hidden="true"> · </span>
-                  <span className={seatsLeft < 0 ? "text-outbound" : ""}>
+                  <span className={seatsLeft < 0 ? "text-danger" : ""}>
                     {seatsLeft < 0
                       ? `${-seatsLeft} de trop`
                       : `${seatsLeft} ${seatsLeft > 1 ? "places libres" : "place libre"}`}
@@ -261,27 +266,46 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               Personne pour l&apos;instant. Partage l&apos;adresse de cette page au groupe.
             </p>
           ) : (
-            <ul className="mt-3 divide-y divide-line border-y border-line">
-              {event.drivers.map((d) => (
-                <li key={d.id} className="flex items-baseline gap-3 py-2.5 text-sm">
-                  <Car className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
-                  <span className="font-medium">{d.name}</span>
-                  <span className="min-w-0 flex-1 truncate text-muted">{d.address}</span>
-                  <span className="tabular shrink-0 font-mono text-xs text-muted">
-                    {d.seats} {d.seats > 1 ? "places" : "place"}
-                  </span>
-                  <DeleteButton label={d.name} onConfirm={() => handleRemove("driver", d.id)} />
-                </li>
-              ))}
-              {event.passengers.map((p) => (
-                <li key={p.id} className="flex items-baseline gap-3 py-2.5 text-sm">
-                  <User className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
-                  <span className="font-medium">{p.name}</span>
-                  <span className="min-w-0 flex-1 truncate text-muted">{p.address}</span>
-                  <DeleteButton label={p.name} onConfirm={() => handleRemove("passenger", p.id)} />
-                </li>
-              ))}
-            </ul>
+            <>
+              {event.drivers.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium tracking-wide text-muted">
+                    Conducteurs · {event.drivers.length}
+                  </p>
+                  <ul className="mt-1.5 divide-y divide-line border-y border-line">
+                    {event.drivers.map((d) => (
+                      <li key={d.id} className="flex items-baseline gap-3 py-2.5 text-sm">
+                        <Car className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
+                        <span className="font-medium">{d.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-muted">{d.address}</span>
+                        <span className="tabular shrink-0 font-mono text-xs text-muted">
+                          {d.seats} {d.seats > 1 ? "places" : "place"}
+                        </span>
+                        <DeleteButton label={d.name} onConfirm={() => handleRemove("driver", d.id)} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {event.passengers.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium tracking-wide text-muted">
+                    Passagers · {event.passengers.length}
+                  </p>
+                  <ul className="mt-1.5 divide-y divide-line border-y border-line">
+                    {event.passengers.map((p) => (
+                      <li key={p.id} className="flex items-baseline gap-3 py-2.5 text-sm">
+                        <User className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
+                        <span className="font-medium">{p.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-muted">{p.address}</span>
+                        <DeleteButton label={p.name} onConfirm={() => handleRemove("passenger", p.id)} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
           {rosterError && <ErrorNote>{rosterError}</ErrorNote>}
         </section>
@@ -296,6 +320,10 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               <p className="text-sm text-muted">Il faut au moins un conducteur inscrit.</p>
             )}
           </div>
+
+          {solving && (
+            <SolvingProgress driverCount={event.drivers.length} passengerCount={event.passengers.length} />
+          )}
 
           {solveError && <ErrorNote>{solveError}</ErrorNote>}
         </section>

@@ -9,11 +9,13 @@
   // en dur dans le code — cf. docs/deploiement.md.
   //
   // REQUEST_TIMEOUT_MS : filet de sécurité si le primaire reste sans
-  // réponse (au-dessus de SOLVER_TIME_LIMIT_S côté backend pour ne jamais
-  // couper un /solve légitimement long).
+  // réponse. Doit largement couvrir SOLVER_TIME_LIMIT_S (10s) + l'appel
+  // Google Routes + les tracés OSRM par tournée sur un /solve à plusieurs
+  // passagers — 12s s'est révélé trop court en pratique (bascule vers
+  // Railway, qui répond mais sans OSRM : trafic correct, tracé absent).
   "vars": {
     "PRIMARY_API_URL": "https://smartcovoitlocalapi.qmeyer.fr",
     "FALLBACK_API_URL": "https://smartcovoit-production.up.railway.app",
-    "REQUEST_TIMEOUT_MS": "12000"
+    "REQUEST_TIMEOUT_MS": "25000"
   }
 }

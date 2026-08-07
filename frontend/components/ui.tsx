@@ -60,7 +60,7 @@ export function Button({
 
 export function ErrorNote({ children }: { children: ReactNode }) {
   return (
-    <p role="alert" className="text-sm text-outbound">
+    <p role="alert" className="text-sm text-danger">
       {children}
     </p>
   );

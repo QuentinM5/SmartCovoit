@@ -46,7 +46,7 @@ export function DeleteButton({ label, onConfirm }: { label: string; onConfirm: (
         aria-label={`Retirer ${label}`}
         tabIndex={confirming ? -1 : 0}
         onClick={open}
-        className="rounded p-1 text-muted transition hover:text-outbound"
+        className="rounded p-1 text-muted transition hover:text-danger"
       >
         <X className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
       </button>
@@ -61,7 +61,7 @@ export function DeleteButton({ label, onConfirm }: { label: string; onConfirm: (
           type="button"
           tabIndex={confirming ? 0 : -1}
           onClick={confirm}
-          className={`flex h-full ${PANEL_WIDTH_CLASS} items-center justify-center gap-1.5 whitespace-nowrap bg-outbound px-3 text-xs font-medium text-paper transition hover:opacity-90`}
+          className={`flex h-full ${PANEL_WIDTH_CLASS} items-center justify-center gap-1.5 whitespace-nowrap bg-danger px-3 text-xs font-medium text-paper transition hover:opacity-90`}
         >
           <Check className="size-3.5 shrink-0" strokeWidth={2} aria-hidden="true" />
           Confirmer
