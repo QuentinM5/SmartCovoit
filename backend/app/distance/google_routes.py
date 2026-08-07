@@ -16,7 +16,7 @@ variable d'environnement backend uniquement.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -116,8 +116,15 @@ class GoogleRoutesProvider:
             "routingPreference": "TRAFFIC_AWARE",
             # Sans departureTime explicite, TRAFFIC_AWARE renvoie une simple
             # estimation statique malgré son nom — "maintenant" est ce qui
-            # déclenche la prise en compte du trafic réel.
-            "departureTime": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            # déclenche la prise en compte du trafic réel. Google exige
+            # strictement un horodatage FUTUR ("Timestamp must be set to a
+            # future time.") : `datetime.now()` pile à l'envoi arrive déjà
+            # dans le passé une fois la requête reçue (latence réseau, dérive
+            # d'horloge du serveur) — d'où une marge de sécurité, sans impact
+            # sur la pertinence du trafic pris en compte.
+            "departureTime": (datetime.now(timezone.utc) + timedelta(seconds=30)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
         }
 
         try:
