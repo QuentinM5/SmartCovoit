@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from typing import TypeVar
 
 import anyio
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,6 +111,30 @@ async def add_passenger(
     return passenger
 
 
+@router.delete("/events/{event_id}/drivers/{driver_id}", status_code=204, response_class=Response)
+async def remove_driver(
+    event_id: uuid.UUID,
+    driver_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    driver = await _get_participant_or_404(db, Driver, event_id, driver_id)
+    await db.delete(driver)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/events/{event_id}/passengers/{passenger_id}", status_code=204, response_class=Response)
+async def remove_passenger(
+    event_id: uuid.UUID,
+    passenger_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    passenger = await _get_participant_or_404(db, Passenger, event_id, passenger_id)
+    await db.delete(passenger)
+    await db.commit()
+    return Response(status_code=204)
+
+
 @router.post("/events/{event_id}/solve", response_model=schemas.SolutionOut, status_code=201)
 async def solve_event(
     event_id: uuid.UUID,
@@ -141,6 +166,7 @@ async def solve_event(
     solve_request = SolveRequest(
         direction=event.direction,
         distance_matrix=matrix_result.distances,
+        duration_matrix=matrix_result.durations,
         drivers=driver_specs,
         passengers=passenger_specs,
         time_limit_s=settings.solver_time_limit_s,
@@ -171,6 +197,7 @@ async def solve_event(
             driver_id=driver_uuid_by_str[route.driver_id],
             driver_name=route.driver_name,
             distance_m=route.distance_m,
+            duration_s=route.duration_s,
             geometry=geometry,
             stops=[
                 schemas.StopOut(
@@ -182,6 +209,7 @@ async def solve_event(
                     if stop.passenger_id
                     else None,
                     cumulative_distance_m=stop.cumulative_distance_m,
+                    cumulative_duration_s=stop.cumulative_duration_s,
                 )
                 for stop in route.stops
             ],
@@ -204,6 +232,7 @@ async def solve_event(
         id=record.id,
         event_id=event.id,
         total_distance_m=record.total_distance_m,
+        total_duration_s=solution.total_duration_s,
         matrix_source=record.matrix_source,
         fallback_reason=record.fallback_reason,
         routes=routes_out,
@@ -232,11 +261,23 @@ async def get_latest_solution(event_id: uuid.UUID, db: AsyncSession = Depends(ge
         id=record.id,
         event_id=record.event_id,
         total_distance_m=record.total_distance_m,
+        total_duration_s=_total_duration_s(routes_out),
         matrix_source=record.matrix_source,
         fallback_reason=record.fallback_reason,
         routes=routes_out,
         created_at=record.created_at,
     )
+
+
+def _total_duration_s(routes: list[schemas.RouteOut]) -> int | None:
+    """Recalculée depuis `payload` plutôt que stockée en colonne séparée —
+    `total_distance_m` a une colonne dédiée pour trier/filtrer dessus côté
+    SQL, ce dont `total_duration_s` n'a pas besoin (jamais interrogé hors
+    de sa propre solution)."""
+    durations = [r.duration_s for r in routes]
+    if any(d is None for d in durations):
+        return None
+    return sum(durations)
 
 
 async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID) -> Event:
@@ -257,6 +298,27 @@ async def _load_event_with_participants(db: AsyncSession, event_id: uuid.UUID) -
     if event is None:
         raise HTTPException(status_code=404, detail="Événement introuvable.")
     return event
+
+
+_Participant = TypeVar("_Participant", Driver, Passenger)
+
+
+async def _get_participant_or_404(
+    db: AsyncSession, model: type[_Participant], event_id: uuid.UUID, participant_id: uuid.UUID
+) -> _Participant:
+    """Charge un conducteur/passager en vérifiant qu'il appartient bien à cet
+    événement — pas seulement qu'un tel id existe quelque part.
+
+    Sans le filtre sur `event_id`, un id valide provenant d'un AUTRE
+    événement (deviné, ou récupéré ailleurs) permettrait de supprimer un
+    participant qui n'apparaît même pas sur la page consultée.
+    """
+    stmt = select(model).where(model.id == participant_id, model.event_id == event_id)
+    result = await db.execute(stmt)
+    participant = result.scalar_one_or_none()
+    if participant is None:
+        raise HTTPException(status_code=404, detail="Participant introuvable pour cet événement.")
+    return participant
 
 
 async def _locate_or_422(

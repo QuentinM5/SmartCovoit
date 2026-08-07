@@ -15,9 +15,12 @@ import httpx
 import respx
 
 from app.distance.fallback import FallbackMatrixProvider
+from app.distance.google_routes import GoogleRoutesProvider
 from app.distance.haversine import HaversineProvider, haversine_m
 from app.distance.osrm import OSRMProvider
 from app.distance.types import Coord
+
+GOOGLE_MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
 
 PARIS = Coord(48.8566, 2.3522)
 LYON = Coord(45.7640, 4.8357)
@@ -45,13 +48,21 @@ async def test_road_factor_scales_distance_uniformly():
 async def test_osrm_success_returns_osrm_source():
     with respx.mock(base_url="http://osrm.local") as router:
         router.get("/table/v1/driving/2.3522,48.8566;4.8357,45.764").mock(
-            return_value=httpx.Response(200, json={"code": "Ok", "distances": [[0, 391000], [391000, 0]]})
+            return_value=httpx.Response(
+                200,
+                json={
+                    "code": "Ok",
+                    "distances": [[0, 391000], [391000, 0]],
+                    "durations": [[0, 14400], [14400, 0]],
+                },
+            )
         )
         provider = OSRMProvider(base_url="http://osrm.local")
         result = await provider.matrix(COORDS)
 
     assert result.source == "osrm"
     assert result.distances == [[0, 391000], [391000, 0]]
+    assert result.durations == [[0, 14400], [14400, 0]]
 
 
 async def test_fallback_switches_to_haversine_when_osrm_unreachable():
@@ -69,7 +80,14 @@ async def test_fallback_switches_to_haversine_when_osrm_unreachable():
 async def test_fallback_switches_to_haversine_on_unroutable_pair():
     with respx.mock(base_url="http://osrm.local") as router:
         router.get(re.compile(r".*")).mock(
-            return_value=httpx.Response(200, json={"code": "Ok", "distances": [[0, None], [None, 0]]})
+            return_value=httpx.Response(
+                200,
+                json={
+                    "code": "Ok",
+                    "distances": [[0, None], [None, 0]],
+                    "durations": [[0, 100], [100, 0]],
+                },
+            )
         )
         osrm = OSRMProvider(base_url="http://osrm.local")
         provider = FallbackMatrixProvider(osrm=osrm)
@@ -85,6 +103,64 @@ async def test_fallback_goes_directly_to_haversine_when_osrm_not_configured():
 
     assert result.source == "haversine"
     assert result.fallback_reason is None
+
+
+# --- Chaîne à trois niveaux : Google -> OSRM -> Haversine -------------------
+
+_GOOGLE_OK = [
+    {"originIndex": 0, "destinationIndex": 1, "distanceMeters": 500, "duration": "60s", "condition": "ROUTE_EXISTS"},
+    {"originIndex": 1, "destinationIndex": 0, "distanceMeters": 500, "duration": "65s", "condition": "ROUTE_EXISTS"},
+]
+
+
+async def test_fallback_prefers_google_when_configured():
+    with respx.mock() as router:
+        router.post(GOOGLE_MATRIX_URL).mock(return_value=httpx.Response(200, json=_GOOGLE_OK))
+        provider = FallbackMatrixProvider(osrm=None, google=GoogleRoutesProvider(api_key="k"))
+        result = await provider.matrix(COORDS)
+
+    assert result.source == "google"
+    assert result.durations == [[0, 60], [65, 0]]
+
+
+async def test_fallback_from_google_to_osrm_when_google_fails():
+    with respx.mock() as router:
+        router.post(GOOGLE_MATRIX_URL).mock(return_value=httpx.Response(403, text="quota"))
+        router.get(re.compile(r"http://osrm\.local/.*")).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "code": "Ok",
+                    "distances": [[0, 391000], [391000, 0]],
+                    "durations": [[0, 14400], [14400, 0]],
+                },
+            )
+        )
+        provider = FallbackMatrixProvider(
+            osrm=OSRMProvider(base_url="http://osrm.local"),
+            google=GoogleRoutesProvider(api_key="k"),
+        )
+        result = await provider.matrix(COORDS)
+
+    assert result.source == "osrm"
+    # OSRM a réussi : pas de raison à afficher, seul un échec du DERNIER
+    # niveau essayé (avant Haversine) en porte une.
+    assert result.fallback_reason is None
+
+
+async def test_fallback_from_google_and_osrm_to_haversine():
+    with respx.mock() as router:
+        router.post(GOOGLE_MATRIX_URL).mock(return_value=httpx.Response(403, text="quota"))
+        router.get(re.compile(r"http://osrm\.local/.*")).mock(side_effect=httpx.ConnectError("refused"))
+        provider = FallbackMatrixProvider(
+            osrm=OSRMProvider(base_url="http://osrm.local"),
+            google=GoogleRoutesProvider(api_key="k"),
+        )
+        result = await provider.matrix(COORDS)
+
+    assert result.source == "haversine"
+    assert result.fallback_reason is not None
+    assert result.distances[0][1] == haversine_m(PARIS, LYON)
 
 
 # --- Tracé routier (route_geometry) ---------------------------------------

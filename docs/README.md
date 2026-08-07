@@ -5,6 +5,10 @@ Les conducteurs s'inscrivent avec leurs places disponibles et leur adresse,
 les passagers avec leur adresse ; le backend calcule l'affectation optimale
 (VRP capacitaire, OR-Tools) et produit une feuille de route par conducteur.
 
+En production : **https://smartcovoit.qmeyer.fr** — cf. `docs/deploiement.md`
+pour l'architecture (TrueNAS + secours cloud + Worker de failover) et les
+étapes de déploiement restantes.
+
 ## Structure du repo
 
 ```
@@ -49,6 +53,7 @@ des variables d'environnement, jamais en dur dans le code.
 |---|---|---|
 | `DATABASE_URL` | Connexion Postgres (Neon en prod, format libpq accepté — `sslmode=require` géré automatiquement) | Postgres local du docker-compose |
 | `OSRM_URL` | URL du service OSRM `table` endpoint. Vide = repli Haversine direct, sans avertissement | (vide) |
+| `GOOGLE_ROUTES_API_KEY` | Clé serveur Google Routes API (trafic temps réel). Vide = repli OSRM direct, sans avertissement. Distincte de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (navigateur) | (vide) |
 | `NOMINATIM_URL` | Instance Nominatim à interroger | instance publique OpenStreetMap |
 | `NOMINATIM_USER_AGENT` | Identifiant requis par la politique d'usage Nominatim | — |
 | `SOLVER_TIME_LIMIT_S` | Limite de temps (s) laissée à OR-Tools | `10` |

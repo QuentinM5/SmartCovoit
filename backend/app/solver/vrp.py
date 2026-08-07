@@ -2,7 +2,9 @@
 
 Un événement = un dépôt (nœud 0) + des conducteurs (chacun un véhicule de
 capacité = ses places) + des passagers (chacun une demande de 1 place).
-Objectif unique : minimiser la distance totale parcourue par la flotte.
+Objectif : minimiser le temps de trajet total de la flotte quand une matrice
+de durées est fournie (cf. `duration_matrix` dans `SolveRequest`), sinon la
+distance totale.
 
 Le nombre de véhicules est fixe et égal au nombre de conducteurs inscrits —
 ce n'est pas une variable à minimiser. Un conducteur sans passager affecté
@@ -50,13 +52,18 @@ def solve(request: SolveRequest) -> Solution:
     routing = pywrapcp.RoutingModel(manager)
 
     matrix = request.distance_matrix
+    duration_matrix = request.duration_matrix
+    # Ce que l'évaluateur d'arcs minimise réellement : la durée quand elle est
+    # disponible (c'est le nouveau critère d'optimisation), sinon la distance
+    # comme avant — rétrocompatible sans duration_matrix.
+    cost_matrix = duration_matrix if duration_matrix is not None else matrix
 
-    def distance_callback(from_index: int, to_index: int) -> int:
+    def cost_callback(from_index: int, to_index: int) -> int:
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
-        return matrix[from_node][to_node]
+        return cost_matrix[from_node][to_node]
 
-    transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+    transit_callback_index = routing.RegisterTransitCallback(cost_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
     passenger_nodes = {p.node: p.id for p in request.passengers}
@@ -92,20 +99,26 @@ def solve(request: SolveRequest) -> Solution:
 
     routes: list[Route] = []
     total_distance = 0
+    total_duration = 0 if duration_matrix is not None else None
 
     for vehicle_id in range(num_vehicles):
         stops: list[Stop] = []
         index = routing.Start(vehicle_id)
         cumulative = 0
+        cumulative_duration = 0 if duration_matrix is not None else None
 
         node = manager.IndexToNode(index)
-        stops.append(Stop(node=node, passenger_id=None, cumulative_distance_m=0))
+        stops.append(
+            Stop(node=node, passenger_id=None, cumulative_distance_m=0, cumulative_duration_s=cumulative_duration)
+        )
 
         while not routing.IsEnd(index):
             next_index = assignment.Value(routing.NextVar(index))
             from_node = manager.IndexToNode(index)
             to_node = manager.IndexToNode(next_index)
             cumulative += matrix[from_node][to_node]
+            if duration_matrix is not None:
+                cumulative_duration += duration_matrix[from_node][to_node]
 
             if not routing.IsEnd(next_index):
                 stops.append(
@@ -113,12 +126,20 @@ def solve(request: SolveRequest) -> Solution:
                         node=to_node,
                         passenger_id=passenger_nodes.get(to_node),
                         cumulative_distance_m=cumulative,
+                        cumulative_duration_s=cumulative_duration,
                     )
                 )
             index = next_index
 
         end_node = manager.IndexToNode(index)
-        stops.append(Stop(node=end_node, passenger_id=None, cumulative_distance_m=cumulative))
+        stops.append(
+            Stop(
+                node=end_node,
+                passenger_id=None,
+                cumulative_distance_m=cumulative,
+                cumulative_duration_s=cumulative_duration,
+            )
+        )
 
         routes.append(
             Route(
@@ -126,13 +147,16 @@ def solve(request: SolveRequest) -> Solution:
                 driver_name=driver_name_by_vehicle[vehicle_id],
                 stops=stops,
                 distance_m=cumulative,
+                duration_s=cumulative_duration,
             )
         )
         total_distance += cumulative
+        if duration_matrix is not None:
+            total_duration += cumulative_duration
 
     _validate_solution(request, routes)
 
-    return Solution(routes=routes, total_distance_m=total_distance)
+    return Solution(routes=routes, total_distance_m=total_distance, total_duration_s=total_duration)
 
 
 def _validate_request(request: SolveRequest) -> None:
@@ -141,6 +165,12 @@ def _validate_request(request: SolveRequest) -> None:
     for row in request.distance_matrix:
         if len(row) != num_nodes:
             raise ValueError("La matrice de distances doit être carrée.")
+
+    if request.duration_matrix is not None:
+        if len(request.duration_matrix) != num_nodes or any(
+            len(row) != num_nodes for row in request.duration_matrix
+        ):
+            raise ValueError("La matrice de durées doit avoir les mêmes dimensions que la matrice de distances.")
 
     seen_nodes: dict[int, str] = {request.depot_node: "dépôt"}
     for d in request.drivers:

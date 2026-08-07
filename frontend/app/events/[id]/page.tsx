@@ -6,18 +6,22 @@ import {
   ApiError,
   addDriver,
   addPassenger,
+  deleteDriver,
+  deletePassenger,
   getEvent,
   getSolution,
   solveEvent,
+  type Direction,
   type EventDetail,
   type Solution,
 } from "@/lib/api";
 import { DirectionGlyph } from "@/components/direction";
-import { AddressInput, type AddressValue } from "@/components/address-input";
+import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
+import { DeleteButton } from "@/components/delete-button";
 import { RouteLine } from "@/components/route-line";
 import { RouteMap, type MapRoute } from "@/components/route-map";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
-import { formatDistance, resolveStops } from "@/lib/route";
+import { formatDistance, formatDuration, resolveStops } from "@/lib/route";
 
 type Role = "driver" | "passenger";
 
@@ -34,6 +38,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [solveError, setSolveError] = useState<string | null>(null);
   const [solving, setSolving] = useState(false);
+  const [rosterError, setRosterError] = useState<string | null>(null);
   // Survoler une tournée dans la liste l'isole sur la carte : avec 4 ou 5
   // véhicules qui se croisent, c'est le seul moyen de suivre un trajet.
   const [highlighted, setHighlighted] = useState<number | null>(null);
@@ -63,6 +68,23 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
+
+  async function handleRemove(kind: Role, participantId: string) {
+    setRosterError(null);
+    try {
+      if (kind === "driver") await deleteDriver(id, participantId);
+      else await deletePassenger(id, participantId);
+      await refresh();
+      // La dernière solution calculée référence un participant qui vient de
+      // disparaître : elle n'est plus exacte, on repart de l'état « à
+      // calculer » plutôt que d'afficher quelque chose de trompeur.
+      // `refresh()` la recharge telle qu'elle est encore en base — on
+      // l'efface donc après coup, pas avant.
+      setSolution(null);
+    } catch (err) {
+      setRosterError(networkMessage(err, "La suppression n'a pas abouti. Réessaie."));
+    }
+  }
 
   async function handleSolve() {
     setSolveError(null);
@@ -106,8 +128,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   }
 
   const dispersion = event.direction === "dispersion";
-  const addressLabel = dispersion ? "Adresse d'arrivée" : "Adresse de départ";
-  const addressHint = dispersion ? "Où on te dépose." : "D'où on te prend.";
   const totalSeats = event.drivers.reduce((sum, d) => sum + d.seats, 0);
   const seatsLeft = totalSeats - event.passengers.length;
 
@@ -132,12 +152,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           </div>
         </section>
 
-        <SignupSection
-          eventId={id}
-          addressLabel={addressLabel}
-          addressHint={addressHint}
-          onAdded={refresh}
-        />
+        <SignupSection eventId={id} direction={event.direction} onAdded={refresh} />
 
         <section>
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -173,6 +188,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   <span className="tabular shrink-0 font-mono text-xs text-muted">
                     {d.seats} {d.seats > 1 ? "places" : "place"}
                   </span>
+                  <DeleteButton label={d.name} onConfirm={() => handleRemove("driver", d.id)} />
                 </li>
               ))}
               {event.passengers.map((p) => (
@@ -180,10 +196,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   <User className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
                   <span className="font-medium">{p.name}</span>
                   <span className="min-w-0 flex-1 truncate text-muted">{p.address}</span>
+                  <DeleteButton label={p.name} onConfirm={() => handleRemove("passenger", p.id)} />
                 </li>
               ))}
             </ul>
           )}
+          {rosterError && <ErrorNote>{rosterError}</ErrorNote>}
         </section>
 
         <section className="flex flex-col gap-4">
@@ -205,18 +223,25 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <h2 className="text-sm font-semibold tracking-tight">Tournées</h2>
               <p className="tabular text-sm text-muted">
-                <span className="font-mono">{formatDistance(solution.total_distance_m)}</span> au
-                total
+                {solution.total_duration_s != null ? (
+                  <>
+                    <span className="font-mono text-ink">
+                      {formatDuration(solution.total_duration_s)}
+                    </span>{" "}
+                    ·{" "}
+                    <span className="font-mono">{formatDistance(solution.total_distance_m)}</span> au
+                    total
+                  </>
+                ) : (
+                  <>
+                    <span className="font-mono">{formatDistance(solution.total_distance_m)}</span> au
+                    total
+                  </>
+                )}
               </p>
             </div>
 
-            {solution.matrix_source === "haversine" && (
-              <p className="rounded-md border border-line bg-surface px-3 py-2 text-xs leading-relaxed text-muted">
-                Distances estimées à vol d&apos;oiseau : le service de routage n&apos;était pas
-                joignable. L&apos;ordre de passage reste valable, les kilomètres sont approximatifs
-                et la carte relie les arrêts en pointillé plutôt que par la route.
-              </p>
-            )}
+            <SourceBanner source={solution.matrix_source} />
 
             <RouteMap routes={mapRoutes} highlightedRoute={highlighted} />
 
@@ -230,6 +255,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     driverName={route.driver_name}
                     seats={driver?.seats ?? 0}
                     distanceM={route.distance_m}
+                    durationS={route.duration_s}
                     stops={mapRoutes[index]?.stops ?? []}
                     onHoverChange={(active) => setHighlighted(active ? index : null)}
                   />
@@ -243,26 +269,77 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   );
 }
 
+/**
+ * Le critère d'optimisation dépend de ce qui a pu être obtenu pour cette
+ * tournée (repli transparent, cf. FallbackMatrixProvider côté backend) : le
+ * bandeau reflète honnêtement ce niveau plutôt que de laisser croire que
+ * c'est toujours le trafic en temps réel qui a été optimisé.
+ */
+function SourceBanner({ source }: { source: Solution["matrix_source"] }) {
+  if (source === "google") {
+    return (
+      <p className="rounded-md border border-line bg-surface px-3 py-2 text-xs leading-relaxed text-muted">
+        Tournées optimisées sur le temps de trajet en tenant compte du trafic en temps réel.
+      </p>
+    );
+  }
+  if (source === "osrm") {
+    return (
+      <p className="rounded-md border border-line bg-surface px-3 py-2 text-xs leading-relaxed text-muted">
+        Tournées optimisées sur le temps de trajet typique (hors trafic en temps réel).
+      </p>
+    );
+  }
+  return (
+    <p className="rounded-md border border-line bg-surface px-3 py-2 text-xs leading-relaxed text-muted">
+      Distances estimées à vol d&apos;oiseau : le service de routage n&apos;était pas joignable.
+      L&apos;ordre de passage reste valable, les kilomètres sont approximatifs et la carte relie
+      les arrêts en pointillé plutôt que par la route.
+    </p>
+  );
+}
+
+/**
+ * Le conducteur ne « se dépose » pas lui-même : son adresse est un point de
+ * son propre trajet (départ ou retour), pas une dépose faite par quelqu'un
+ * d'autre. Le libellé dépend donc du rôle autant que du sens, pas du sens
+ * seul.
+ */
+function addressCopy(role: Role, direction: Direction): { label: string; hint: string } {
+  const dispersion = direction === "dispersion";
+  if (role === "driver") {
+    return dispersion
+      ? { label: "Adresse d'arrivée", hint: "Où tu rentres." }
+      : { label: "Adresse de départ", hint: "D'où tu pars." };
+  }
+  return dispersion
+    ? { label: "Adresse d'arrivée", hint: "Où on te dépose." }
+    : { label: "Adresse de départ", hint: "D'où on te prend." };
+}
+
 function SignupSection({
   eventId,
-  addressLabel,
-  addressHint,
+  direction,
   onAdded,
 }: {
   eventId: string;
-  addressLabel: string;
-  addressHint: string;
+  direction: Direction;
   onAdded: () => void;
 }) {
   const [role, setRole] = useState<Role>("passenger");
   const [name, setName] = useState("");
   const [seats, setSeats] = useState(3);
   const [address, setAddress] = useState<AddressValue>({ address: "", lat: null, lon: null });
+  const [addressAvailable, setAddressAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const { label: addressLabel, hint: addressHint } = addressCopy(role, direction);
+  const addressIncomplete = needsSelection(address, addressAvailable);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (addressIncomplete) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -357,6 +434,7 @@ function SignupSection({
             required
             value={address}
             onChange={setAddress}
+            onAvailabilityChange={setAddressAvailable}
             placeholder="Commence à taper une adresse…"
           />
         </Field>
@@ -364,7 +442,7 @@ function SignupSection({
         {error && <ErrorNote>{error}</ErrorNote>}
 
         <div>
-          <Button type="submit" variant="quiet" disabled={submitting}>
+          <Button type="submit" variant="quiet" disabled={submitting || addressIncomplete}>
             {submitting ? "Inscription…" : "M'inscrire"}
           </Button>
         </div>

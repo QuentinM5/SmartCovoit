@@ -12,6 +12,17 @@ export interface AddressValue {
 }
 
 /**
+ * Une adresse tapée mais jamais choisie dans la liste est une source
+ * d'erreurs (typo, commune homonyme, adresse incomplète) — on bloque la
+ * soumission tant que ce n'est pas résolu, sauf si les suggestions
+ * elles-mêmes ne sont pas disponibles (Google indisponible) : on ne peut
+ * pas exiger une sélection impossible à faire.
+ */
+export function needsSelection(value: AddressValue, suggestionsAvailable: boolean): boolean {
+  return suggestionsAvailable && value.address.trim().length > 0 && value.lat === null;
+}
+
+/**
  * Champ d'adresse avec suggestions Google Places.
  *
  * Deux points importants :
@@ -34,17 +45,29 @@ export function AddressInput({
   placeholder,
   required,
   id,
+  onAvailabilityChange,
 }: {
   value: AddressValue;
   onChange: (next: AddressValue) => void;
   placeholder?: string;
   required?: boolean;
   id?: string;
+  /**
+   * Prévient le parent quand Google n'a pas pu charger, pour qu'il sache si
+   * la contrainte « choisir une suggestion » peut s'appliquer — on ne peut
+   * pas l'exiger si les suggestions elles-mêmes sont indisponibles.
+   */
+  onAvailabilityChange?: (available: boolean) => void;
 }) {
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompleteSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    onAvailabilityChange?.(!unavailable);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unavailable]);
 
   const placesRef = useRef<typeof google.maps.places | null>(null);
   const sessionRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
@@ -230,6 +253,10 @@ export function AddressInput({
           Suggestions indisponibles. Saisis l&apos;adresse complète, elle sera localisée à
           l&apos;envoi.
         </p>
+      )}
+
+      {!unavailable && !open && needsSelection(value, true) && (
+        <p className="mt-1 text-xs text-muted">Choisis une adresse dans la liste de suggestions.</p>
       )}
     </div>
   );

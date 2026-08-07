@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.db.base import get_sessionmaker
 from app.db.geocode_cache_repo import SqlGeocodeCache
 from app.distance.fallback import FallbackMatrixProvider
+from app.distance.google_routes import GoogleRoutesProvider
 from app.distance.haversine import HaversineProvider
 from app.distance.osrm import OSRMProvider
 from app.geocoding.nominatim import NominatimClient
@@ -35,9 +36,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     osrm = OSRMProvider(base_url=settings.osrm_url) if settings.osrm_url else None
+    google = (
+        GoogleRoutesProvider(api_key=settings.google_routes_api_key)
+        if settings.google_routes_api_key
+        else None
+    )
     app.state.matrix_provider = FallbackMatrixProvider(
         osrm=osrm,
         haversine=HaversineProvider(road_factor=settings.haversine_road_factor),
+        google=google,
     )
 
     yield

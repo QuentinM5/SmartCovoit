@@ -19,6 +19,7 @@ export interface ResolvedStop {
   lat: number;
   lon: number;
   cumulativeDistanceM: number;
+  cumulativeDurationS?: number | null;
 }
 
 export function resolveStops(route: Route, event: EventDetail): ResolvedStop[] {
@@ -35,6 +36,7 @@ export function resolveStops(route: Route, event: EventDetail): ResolvedStop[] {
           lat: passenger.lat,
           lon: passenger.lon,
           cumulativeDistanceM: stop.cumulative_distance_m,
+          cumulativeDurationS: stop.cumulative_duration_s,
         },
       ];
     }
@@ -47,6 +49,7 @@ export function resolveStops(route: Route, event: EventDetail): ResolvedStop[] {
           lat: event.depot_lat,
           lon: event.depot_lon,
           cumulativeDistanceM: stop.cumulative_distance_m,
+          cumulativeDurationS: stop.cumulative_duration_s,
         },
       ];
     }
@@ -65,6 +68,7 @@ export function resolveStops(route: Route, event: EventDetail): ResolvedStop[] {
         lat: driver.lat,
         lon: driver.lon,
         cumulativeDistanceM: stop.cumulative_distance_m,
+        cumulativeDurationS: stop.cumulative_duration_s,
       },
     ];
   });
@@ -107,4 +111,12 @@ export function formatDistance(meters: number): string {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })} km`;
+}
+
+export function formatDuration(seconds: number): string {
+  const totalMinutes = Math.round(seconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes === 0 ? `${hours} h` : `${hours} h ${minutes.toString().padStart(2, "0")}`;
 }

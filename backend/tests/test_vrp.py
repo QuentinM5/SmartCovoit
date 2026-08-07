@@ -129,3 +129,66 @@ def test_no_solution_error_message_is_usable():
     with pytest.raises(NoSolutionError) as exc_info:
         raise NoSolutionError()
     assert str(exc_info.value)
+
+
+# --- Optimisation sur la durée plutôt que la distance -----------------------
+#
+# 1 conducteur, 2 passagers A et B : avec seulement 2 arrêts intermédiaires,
+# il n'y a que deux tournées possibles (A puis B, ou B puis A). Les matrices
+# sont construites pour que ces deux critères se contredisent : la distance
+# favorise fortement "A puis B", la durée (embouteillage sur l'arête
+# conducteur->A) favorise fortement "B puis A" — un cas qu'aucun hasard du
+# solveur ne peut confondre.
+
+_DISTANCE_FAVORS_A_THEN_B = [
+    [0, 500, 2000, 1000],
+    [500, 0, 1000, 2000],
+    [2000, 1000, 0, 1000],
+    [1000, 2000, 1000, 0],
+]
+
+_DURATION_FAVORS_B_THEN_A = [
+    [0, 500, 100, 100],
+    [500, 0, 5000, 100],
+    [100, 5000, 0, 100],
+    [100, 100, 100, 0],
+]
+
+
+def _duration_request(duration_matrix: list[list[int]] | None) -> SolveRequest:
+    driver = DriverSpec(id="d0", name="Driver", seats=2, node=1)
+    passenger_a = PassengerSpec(id="pA", name="A", node=2)
+    passenger_b = PassengerSpec(id="pB", name="B", node=3)
+    return SolveRequest(
+        direction=Direction.RAMASSAGE,
+        distance_matrix=_DISTANCE_FAVORS_A_THEN_B,
+        duration_matrix=duration_matrix,
+        drivers=[driver],
+        passengers=[passenger_a, passenger_b],
+    )
+
+
+def _visit_order(solution) -> list[str]:
+    route = solution.routes[0]
+    return [s.passenger_id for s in route.stops if s.passenger_id is not None]
+
+
+def test_without_duration_matrix_solver_optimizes_distance():
+    solution = solve(_duration_request(duration_matrix=None))
+
+    assert _visit_order(solution) == ["pA", "pB"]
+    assert solution.total_distance_m == 3000
+    assert solution.total_duration_s is None
+    assert solution.routes[0].duration_s is None
+    assert all(s.cumulative_duration_s is None for s in solution.routes[0].stops)
+
+
+def test_with_duration_matrix_solver_optimizes_duration_even_if_longer_in_distance():
+    solution = solve(_duration_request(duration_matrix=_DURATION_FAVORS_B_THEN_A))
+
+    assert _visit_order(solution) == ["pB", "pA"]
+    assert solution.total_duration_s == 300
+    # La tournée choisie est plus longue en distance que l'optimum distance
+    # seule (5000 > 3000) : la preuve que c'est bien la durée qui a été
+    # minimisée, pas la distance.
+    assert solution.total_distance_m == 5000

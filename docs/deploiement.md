@@ -97,6 +97,40 @@ celle du Worker (vérifié dans le bundle JS envoyé au navigateur).
 sans souci ici, mais WSL serait recommandé si des problèmes apparaissent
 plus tard.
 
+### Domaine personnalisé `smartcovoit.qmeyer.fr` — à faire
+
+Doit remplacer l'URL `*.workers.dev` ci-dessus comme adresse publique du
+frontend. Cloudflare Custom Domains crée l'enregistrement DNS
+automatiquement au moment de l'ajout — cette étape se fait donc uniquement
+depuis le dashboard, jamais par API (consigne : ne jamais créer de
+DNS/domaine par ce biais).
+
+**Étapes manuelles, dans l'ordre :**
+
+1. **Cloudflare** — Workers & Pages → `smartcovoit-frontend` → Settings →
+   Domains & Routes → Add → Custom Domain → `smartcovoit.qmeyer.fr`. Le DNS
+   est créé automatiquement à cette étape.
+2. **Google Cloud Console** — Identifiants → la clé Maps
+   (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) → Restrictions d'application (HTTP
+   referrer) → ajouter `https://smartcovoit.qmeyer.fr/*` **en plus** des
+   entrées existantes (garder `*.workers.dev` tant qu'il reste actif, pour
+   ne pas casser l'ancienne URL pendant la transition).
+3. **Backend — `CORS_ORIGINS`** sur les deux instances : sans ça, le
+   nouveau domaine est bloqué par CORS malgré un DNS fonctionnel — piège
+   déjà rencontré une fois pendant ce déploiement.
+   - **TrueNAS**, dans `/mnt/Main/apps/smartcovoit/.env` :
+     ```bash
+     sed -i -E 's|^(CORS_ORIGINS=.*)$|\1,https://smartcovoit.qmeyer.fr|' /mnt/Main/apps/smartcovoit/.env
+     ```
+     `docker compose restart` seul ne relit pas `env_file` — il faut
+     recréer le conteneur pour que la nouvelle valeur soit prise en compte :
+     ```bash
+     cd /mnt/Main/apps/smartcovoit && docker compose -f infra/docker-compose.yml --profile osrm up -d
+     ```
+   - **Railway** — dashboard → service backend → onglet `Variables` →
+     `CORS_ORIGINS` → ajouter `,https://smartcovoit.qmeyer.fr` à la valeur
+     existante (Railway redéploie automatiquement).
+
 ## Résumé des variables
 
 | Variable | Où | Valeur |
@@ -104,7 +138,8 @@ plus tard.
 | `DATABASE_URL` | TrueNAS + Railway | URL Neon (fait ✅) |
 | `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (vide sur Railway) (fait ✅) |
 | `NOMINATIM_USER_AGENT` | les deux | Nom d'app + contact réel (fait ✅) |
-| `CORS_ORIGINS` | les deux | URL du frontend déployé (à mettre à jour) |
+| `CORS_ORIGINS` | les deux | URL(s) du frontend déployé — à ajouter : `https://smartcovoit.qmeyer.fr` (cf. checklist ci-dessus) |
+| `GOOGLE_ROUTES_API_KEY` | les deux (optionnel) | Clé serveur Google Routes API, distincte de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — vide = pas de trafic temps réel, repli OSRM automatique |
 | `PRIMARY_API_URL` | Worker répartiteur | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
 | `FALLBACK_API_URL` | Worker répartiteur | `https://smartcovoit-production.up.railway.app` (fait ✅) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `https://smartcovoit-worker.quentinmeyer57570.workers.dev` (fait ✅) |

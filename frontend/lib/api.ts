@@ -46,12 +46,15 @@ export interface Stop {
   passenger_id: string | null;
   passenger_name: string | null;
   cumulative_distance_m: number;
+  /** Absente si aucune matrice de durées n'a pu être obtenue (repli Haversine). */
+  cumulative_duration_s?: number | null;
 }
 
 export interface Route {
   driver_id: string;
   driver_name: string;
   distance_m: number;
+  duration_s?: number | null;
   stops: Stop[];
   /**
    * Tracé routier réel, suite de points [lat, lon]. Absent quand OSRM n'est pas
@@ -65,7 +68,8 @@ export interface Solution {
   id: string;
   event_id: string;
   total_distance_m: number;
-  matrix_source: "osrm" | "haversine";
+  total_duration_s?: number | null;
+  matrix_source: "google" | "osrm" | "haversine";
   fallback_reason: string | null;
   routes: Route[];
   created_at: string;
@@ -131,6 +135,14 @@ export function addPassenger(
   data: { name: string; address: string } & AddressFields,
 ) {
   return request<Passenger>(`/events/${eventId}/passengers`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export function deleteDriver(eventId: string, driverId: string) {
+  return request<void>(`/events/${eventId}/drivers/${driverId}`, { method: "DELETE" });
+}
+
+export function deletePassenger(eventId: string, passengerId: string) {
+  return request<void>(`/events/${eventId}/passengers/${passengerId}`, { method: "DELETE" });
 }
 
 export function solveEvent(eventId: string) {

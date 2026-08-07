@@ -2,7 +2,13 @@
 
 import { ExternalLink } from "lucide-react";
 import { ROUTE_COLORS } from "@/components/route-map";
-import { formatDistance, googleMapsDirectionsUrl, MAX_WAYPOINTS, type ResolvedStop } from "@/lib/route";
+import {
+  formatDistance,
+  formatDuration,
+  googleMapsDirectionsUrl,
+  MAX_WAYPOINTS,
+  type ResolvedStop,
+} from "@/lib/route";
 
 /**
  * Une tournée est une ligne avec des arrêts ordonnés — on la dessine comme
@@ -13,6 +19,7 @@ export function RouteLine({
   driverName,
   seats,
   distanceM,
+  durationS,
   stops,
   index,
   onHoverChange,
@@ -20,6 +27,7 @@ export function RouteLine({
   driverName: string;
   seats: number;
   distanceM: number;
+  durationS?: number | null;
   stops: ResolvedStop[];
   index: number;
   onHoverChange?: (active: boolean) => void;
@@ -49,7 +57,15 @@ export function RouteLine({
           {driverName}
         </h3>
         <p className="tabular text-sm text-muted">
-          <span className="font-mono">{formatDistance(distanceM)}</span>
+          {durationS != null ? (
+            <>
+              <span className="font-mono text-ink">{formatDuration(durationS)}</span>
+              <span aria-hidden="true"> · </span>
+              <span className="font-mono">{formatDistance(distanceM)}</span>
+            </>
+          ) : (
+            <span className="font-mono">{formatDistance(distanceM)}</span>
+          )}
           <span aria-hidden="true"> · </span>
           {passengerCount} / {seats} {seats > 1 ? "places" : "place"}
         </p>
@@ -77,8 +93,18 @@ export function RouteLine({
                 {stop.label}
               </span>
 
-              <span className="tabular -mt-0.5 font-mono text-xs text-muted">
-                {i === 0 ? "" : formatDistance(stop.cumulativeDistanceM)}
+              <span className="tabular -mt-0.5 flex flex-col items-end font-mono text-xs text-muted">
+                {i !== 0 &&
+                  (stop.cumulativeDurationS != null ? (
+                    <>
+                      <span>{formatDuration(stop.cumulativeDurationS)}</span>
+                      <span className="text-[10px] opacity-70">
+                        {formatDistance(stop.cumulativeDistanceM)}
+                      </span>
+                    </>
+                  ) : (
+                    <span>{formatDistance(stop.cumulativeDistanceM)}</span>
+                  ))}
               </span>
             </li>
           );

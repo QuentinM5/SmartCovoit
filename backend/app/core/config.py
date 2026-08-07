@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # Vide = pas d'OSRM configuré -> repli Haversine direct, sans warning.
     osrm_url: str = ""
 
+    # Vide = pas de trafic temps réel -> repli sur OSRM direct, sans warning.
+    # Distincte de la clé du navigateur (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
+    # restreinte par domaine) : celle-ci tourne côté serveur uniquement, ne
+    # doit jamais être exposée au client, et n'a besoin d'être restreinte que
+    # par API (Routes API) côté console Google Cloud.
+    google_routes_api_key: str = ""
+
     nominatim_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "smartcovoit/1.0 (set NOMINATIM_USER_AGENT with contact info)"
 

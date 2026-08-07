@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-MatrixSource = Literal["osrm", "haversine"]
+MatrixSource = Literal["google", "osrm", "haversine"]
 
 # Suite de points (lat, lon) décrivant un tracé sur la carte.
 Polyline = list[list[float]]
@@ -32,9 +32,14 @@ class MatrixResult:
     plutôt que routières.
     """
 
-    distances: list[list[int]]  # mètres, entiers, matrice carrée
+    distances: list[list[int]]  # mètres, entiers, matrice carrée — toujours renseigné
     source: MatrixSource
     fallback_reason: str | None = None
+    # Secondes, matrice carrée. Absent seulement pour Haversine (une ligne
+    # droite n'a pas de durée de circulation). C'est ce que le solveur
+    # minimise quand ce champ est renseigné — `distances` reste la vérité
+    # affichée en km, quelle que soit la source.
+    durations: list[list[int]] | None = None
 
 
 class MatrixProvider(Protocol):

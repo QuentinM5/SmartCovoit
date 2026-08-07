@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, createEvent, type Direction } from "@/lib/api";
 import { DirectionPicker } from "@/components/direction";
-import { AddressInput, type AddressValue } from "@/components/address-input";
+import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
 
 export default function HomePage() {
@@ -14,11 +14,18 @@ export default function HomePage() {
   // c'est le moment où personne n'a envie de s'organiser à la main.
   const [direction, setDirection] = useState<Direction>("dispersion");
   const [depot, setDepot] = useState<AddressValue>({ address: "", lat: null, lon: null });
+  const [addressAvailable, setAddressAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const depotIncomplete = needsSelection(depot, addressAvailable);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // Filet de sécurité au cas où le formulaire serait soumis autrement que
+    // par le bouton (Entrée dans un champ) : le bouton désactivé ne suffit
+    // pas toujours à bloquer la soumission clavier.
+    if (depotIncomplete) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -80,6 +87,7 @@ export default function HomePage() {
               required
               value={depot}
               onChange={setDepot}
+              onAvailabilityChange={setAddressAvailable}
               placeholder="Commence à taper une adresse…"
             />
           </Field>
@@ -87,7 +95,7 @@ export default function HomePage() {
           {error && <ErrorNote>{error}</ErrorNote>}
 
           <div>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || depotIncomplete}>
               {submitting ? "Création…" : "Créer l'événement"}
             </Button>
           </div>

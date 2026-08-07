@@ -94,12 +94,15 @@ class StopOut(BaseModel):
     passenger_id: uuid.UUID | None
     passenger_name: str | None
     cumulative_distance_m: int
+    # Absent si aucune matrice de durées n'a pu être obtenue (repli Haversine).
+    cumulative_duration_s: int | None = None
 
 
 class RouteOut(BaseModel):
     driver_id: uuid.UUID
     driver_name: str
     distance_m: int
+    duration_s: int | None = None
     stops: list[StopOut]
     # Tracé routier réel (suite de points [lat, lon]) pour l'affichage sur la
     # carte. Absent si OSRM n'est pas disponible — le client relie alors les
@@ -112,6 +115,7 @@ class SolutionOut(BaseModel):
     id: uuid.UUID
     event_id: uuid.UUID
     total_distance_m: int
+    total_duration_s: int | None = None
     matrix_source: str
     fallback_reason: str | None
     routes: list[RouteOut]

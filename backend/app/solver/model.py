@@ -59,6 +59,11 @@ class SolveRequest:
     drivers: list[DriverSpec]
     passengers: list[PassengerSpec]
     time_limit_s: int = 10
+    # Secondes. Quand fourni, c'est CE QUE le solveur minimise (l'évaluateur
+    # d'arcs OR-Tools) au lieu de distance_matrix — distance_matrix continue
+    # d'être parcourue en parallèle pour peupler les champs *_distance_*,
+    # affichés indépendamment du critère d'optimisation.
+    duration_matrix: list[list[int]] | None = None
 
     @property
     def depot_node(self) -> int:
@@ -76,6 +81,7 @@ class Stop:
     node: int
     passenger_id: str | None  # None pour le dépôt ou le domicile du conducteur
     cumulative_distance_m: int
+    cumulative_duration_s: int | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +92,7 @@ class Route:
     driver_name: str
     stops: list[Stop] = field(default_factory=list)
     distance_m: int = 0
+    duration_s: int | None = None
 
     @property
     def passenger_ids(self) -> list[str]:
@@ -98,3 +105,4 @@ class Solution:
 
     routes: list[Route]
     total_distance_m: int
+    total_duration_s: int | None = None
