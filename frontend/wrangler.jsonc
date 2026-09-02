@@ -8,7 +8,14 @@
   ],
   "assets": {
     "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Défaut Cloudflare ("auto-trailing-slash") redirige toute requête
+    // .html vers son équivalent sans extension — casse la vérification
+    // Google Search Console, qui exige googleXXXX.html servi tel quel, sans
+    // redirection. Aucune page de l'app n'est un .html statique (le routage
+    // applicatif passe par le Worker Next.js, pas par ce binding), donc ce
+    // réglage n'affecte que les fichiers de vérification de ce type.
+    "html_handling": "none"
   },
   "services": [
     {
