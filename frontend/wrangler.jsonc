@@ -14,6 +14,15 @@
     {
       "binding": "WORKER_SELF_REFERENCE",
       "service": "smartcovoit-frontend"
+    },
+    {
+      // Liaison directe vers le Worker de failover, RPC interne à
+      // Cloudflare : contourne la restriction "un Worker ne peut pas fetch
+      // un autre sous-domaine *.workers.dev" que déclenche un fetch() normal
+      // entre deux Workers du même compte (générateMetadata en a besoin
+      // pour lire le nom de l'événement côté serveur).
+      "binding": "API_WORKER",
+      "service": "smartcovoit-worker"
     }
   ],
   "images": {

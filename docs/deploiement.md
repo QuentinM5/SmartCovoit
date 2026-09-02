@@ -97,27 +97,28 @@ celle du Worker (vérifié dans le bundle JS envoyé au navigateur).
 sans souci ici, mais WSL serait recommandé si des problèmes apparaissent
 plus tard.
 
-### Domaine personnalisé `smartcovoit.qmeyer.fr` — à faire
+### Domaine personnalisé `smartcovoit.qmeyer.fr` — fait ✅
 
-Doit remplacer l'URL `*.workers.dev` ci-dessus comme adresse publique du
-frontend. Cloudflare Custom Domains crée l'enregistrement DNS
-automatiquement au moment de l'ajout — cette étape se fait donc uniquement
-depuis le dashboard, jamais par API (consigne : ne jamais créer de
-DNS/domaine par ce biais).
+Remplace l'URL `*.workers.dev` comme adresse publique du frontend
+(`*.workers.dev` reste actif en parallèle, pas désactivé). Vérifié en place :
+Custom Domain Cloudflare actif, CORS ouvert sur les deux instances backend
+(TrueNAS et Railway répondent `Access-Control-Allow-Origin:
+https://smartcovoit.qmeyer.fr`), et `NEXT_PUBLIC_SITE_URL` (métadonnées,
+sitemap, robots.txt) pointe sur ce domaine depuis le déploiement du
+01/09/2026.
 
-**Étapes manuelles, dans l'ordre :**
+**Étapes qui avaient été faites, pour référence :**
 
 1. **Cloudflare** — Workers & Pages → `smartcovoit-frontend` → Settings →
    Domains & Routes → Add → Custom Domain → `smartcovoit.qmeyer.fr`. Le DNS
    est créé automatiquement à cette étape.
 2. **Google Cloud Console** — Identifiants → la clé Maps
    (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) → Restrictions d'application (HTTP
-   referrer) → ajouter `https://smartcovoit.qmeyer.fr/*` **en plus** des
-   entrées existantes (garder `*.workers.dev` tant qu'il reste actif, pour
-   ne pas casser l'ancienne URL pendant la transition).
-3. **Backend — `CORS_ORIGINS`** sur les deux instances : sans ça, le
-   nouveau domaine est bloqué par CORS malgré un DNS fonctionnel — piège
-   déjà rencontré une fois pendant ce déploiement.
+   referrer) → `https://smartcovoit.qmeyer.fr/*` ajoutée en plus des entrées
+   existantes.
+3. **Backend — `CORS_ORIGINS`** sur les deux instances (TrueNAS et Railway) —
+   sans ça, le nouveau domaine est bloqué par CORS malgré un DNS
+   fonctionnel, piège rencontré une fois pendant ce déploiement.
    - **TrueNAS**, dans `/mnt/Main/apps/smartcovoit/.env` :
      ```bash
      sed -i -E 's|^(CORS_ORIGINS=.*)$|\1,https://smartcovoit.qmeyer.fr|' /mnt/Main/apps/smartcovoit/.env
@@ -128,7 +129,7 @@ DNS/domaine par ce biais).
      cd /mnt/Main/apps/smartcovoit && docker compose -f infra/docker-compose.yml --profile osrm up -d
      ```
    - **Railway** — dashboard → service backend → onglet `Variables` →
-     `CORS_ORIGINS` → ajouter `,https://smartcovoit.qmeyer.fr` à la valeur
+     `CORS_ORIGINS` → `,https://smartcovoit.qmeyer.fr` ajouté à la valeur
      existante (Railway redéploie automatiquement).
 
 ## Résumé des variables
@@ -138,7 +139,7 @@ DNS/domaine par ce biais).
 | `DATABASE_URL` | TrueNAS + Railway | URL Neon (fait ✅) |
 | `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (vide sur Railway) (fait ✅) |
 | `NOMINATIM_USER_AGENT` | les deux | Nom d'app + contact réel (fait ✅) |
-| `CORS_ORIGINS` | les deux | URL(s) du frontend déployé — à ajouter : `https://smartcovoit.qmeyer.fr` (cf. checklist ci-dessus) |
+| `CORS_ORIGINS` | les deux | URL(s) du frontend déployé, dont `https://smartcovoit.qmeyer.fr` (fait ✅) |
 | `GOOGLE_ROUTES_API_KEY` | les deux (optionnel) | Clé serveur Google Routes API, distincte de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — vide = pas de trafic temps réel, repli OSRM automatique |
 | `PRIMARY_API_URL` | Worker répartiteur | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
 | `FALLBACK_API_URL` | Worker répartiteur | `https://smartcovoit-production.up.railway.app` (fait ✅) |

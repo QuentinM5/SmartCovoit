@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
@@ -16,9 +17,27 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500"],
 });
 
+const DESCRIPTION = "Organise les trajets d'un groupe : qui prend qui, et dans quel ordre.";
+
 export const metadata: Metadata = {
-  title: "SmartCovoit",
-  description: "Organise les trajets d'un groupe : qui prend qui, et dans quel ordre.",
+  metadataBase: new URL(SITE_URL),
+  // Chaque page d'événement pose son propre titre (cf. events/[id]/page.tsx) ;
+  // le modèle évite que toutes les pages partagent le même <title>.
+  title: { default: "SmartCovoit", template: "%s · SmartCovoit" },
+  description: DESCRIPTION,
+  alternates: { canonical: `${SITE_URL}/` },
+  openGraph: {
+    title: "SmartCovoit",
+    description: DESCRIPTION,
+    siteName: "SmartCovoit",
+    locale: "fr_CA",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "SmartCovoit",
+    description: DESCRIPTION,
+  },
 };
 
 // Appliqué avant le premier rendu pour qu'un rechargement en mode sombre ne
