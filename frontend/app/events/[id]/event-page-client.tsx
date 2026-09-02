@@ -217,27 +217,29 @@ export function EventPageClient({ id }: { id: string }) {
     <>
       <Header back />
 
-      <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-5 py-8 sm:py-12">
-        <section>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <DirectionGlyph
-                direction={event.direction}
-                className={`mt-1 h-10 w-14 shrink-0 ${dispersion ? "text-outbound" : "text-inbound"}`}
-              />
-              <div className="min-w-0">
-                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
-                <p className="mt-1 text-sm text-muted">
-                  {dispersion ? "Dispersion depuis" : "Ramassage vers"}{" "}
-                  <span className="text-ink">{event.depot_address}</span>
-                </p>
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-8 sm:py-12">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
+          <section>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <DirectionGlyph
+                  direction={event.direction}
+                  className={`mt-1 h-10 w-14 shrink-0 ${dispersion ? "text-outbound" : "text-inbound"}`}
+                />
+                <div className="min-w-0">
+                  <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
+                  <p className="mt-1 text-sm text-muted">
+                    {dispersion ? "Dispersion depuis" : "Ramassage vers"}{" "}
+                    <span className="text-ink">{event.depot_address}</span>
+                  </p>
+                </div>
               </div>
+              <CopyLinkButton className="mt-1" />
             </div>
-            <CopyLinkButton className="mt-1" />
-          </div>
-        </section>
+          </section>
 
-        <SignupSection direction={event.direction} onAdd={handleAddParticipant} />
+          <SignupSection direction={event.direction} onAdd={handleAddParticipant} />
+        </div>
 
         <section>
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -270,9 +272,12 @@ export function EventPageClient({ id }: { id: string }) {
                   <p className="text-xs font-medium tracking-wide text-muted">
                     Conducteurs · {event.drivers.length}
                   </p>
-                  <ul className="mt-1.5 divide-y divide-line border-y border-line">
+                  <ul className="mt-1.5 grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
                     {event.drivers.map((d) => (
-                      <li key={d.id} className="flex items-baseline gap-3 py-2.5 text-sm">
+                      <li
+                        key={d.id}
+                        className="flex items-baseline gap-3 rounded-md border border-line px-3 py-2.5 text-sm"
+                      >
                         <Car className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
                         <span className="font-medium">{d.name}</span>
                         <span className="min-w-0 flex-1 truncate text-muted">{d.address}</span>
@@ -291,9 +296,12 @@ export function EventPageClient({ id }: { id: string }) {
                   <p className="text-xs font-medium tracking-wide text-muted">
                     Passagers · {event.passengers.length}
                   </p>
-                  <ul className="mt-1.5 divide-y divide-line border-y border-line">
+                  <ul className="mt-1.5 grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
                     {event.passengers.map((p) => (
-                      <li key={p.id} className="flex items-baseline gap-3 py-2.5 text-sm">
+                      <li
+                        key={p.id}
+                        className="flex items-baseline gap-3 rounded-md border border-line px-3 py-2.5 text-sm"
+                      >
                         <User className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
                         <span className="font-medium">{p.name}</span>
                         <span className="min-w-0 flex-1 truncate text-muted">{p.address}</span>
@@ -353,7 +361,7 @@ export function EventPageClient({ id }: { id: string }) {
 
             <RouteMap routes={mapRoutes} highlightedRoute={highlighted} />
 
-            <div className="flex flex-col gap-3">
+            <div className="grid gap-3 lg:grid-cols-2">
               {solution.routes.map((route, index) => {
                 const driver = event.drivers.find((d) => d.id === route.driver_id);
                 return (

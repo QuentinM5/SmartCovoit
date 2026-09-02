@@ -56,24 +56,26 @@ export default function HomePage() {
       <>
         <Header />
         <main className="mx-auto w-full max-w-3xl px-5 py-10 sm:py-14">
-          <div className="flex items-start gap-4">
-            <DirectionGlyph
-              direction={direction}
-              animated
-              className={`mt-1 h-10 w-14 shrink-0 animate-pulse ${dispersion ? "text-outbound" : "text-inbound"}`}
-            />
-            <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{name}</h1>
-              <p className="mt-1 text-sm text-muted">
-                {dispersion ? "Dispersion depuis" : "Ramassage vers"}{" "}
-                <span className="text-ink">{depot.address}</span>
-              </p>
+          <div className="mx-auto max-w-lg">
+            <div className="flex items-start gap-4">
+              <DirectionGlyph
+                direction={direction}
+                animated
+                className={`mt-1 h-10 w-14 shrink-0 animate-pulse ${dispersion ? "text-outbound" : "text-inbound"}`}
+              />
+              <div className="min-w-0">
+                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{name}</h1>
+                <p className="mt-1 text-sm text-muted">
+                  {dispersion ? "Dispersion depuis" : "Ramassage vers"}{" "}
+                  <span className="text-ink">{depot.address}</span>
+                </p>
+              </div>
             </div>
+            <p className="mt-8 flex items-center gap-2 text-sm text-muted">
+              <span className="size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
+              Création de l&apos;événement…
+            </p>
           </div>
-          <p className="mt-8 flex items-center gap-2 text-sm text-muted">
-            <span className="size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
-            Création de l&apos;événement…
-          </p>
         </main>
       </>
     );
@@ -84,7 +86,7 @@ export default function HomePage() {
       <Header />
 
       <main className="mx-auto w-full max-w-3xl px-5 py-10 sm:py-14">
-        <div className="max-w-lg">
+        <div className="mx-auto max-w-lg">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Qui prend qui, et dans quel ordre.
           </h1>
@@ -94,7 +96,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-10 flex max-w-lg flex-col gap-6">
+        <form onSubmit={handleSubmit} className="mx-auto mt-10 flex max-w-lg flex-col gap-6">
           <Field label="Nom de l'événement">
             <input
               required

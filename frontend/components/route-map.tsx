@@ -255,7 +255,7 @@ export function RouteMap({
       ref={containerRef}
       role="img"
       aria-label="Carte des tournées calculées"
-      className="h-[22rem] w-full overflow-hidden rounded-lg border border-line sm:h-[26rem]"
+      className="h-[22rem] w-full overflow-hidden rounded-lg border border-line sm:h-[26rem] lg:h-[34rem]"
     />
   );
 }
