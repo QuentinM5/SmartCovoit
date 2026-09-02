@@ -15,7 +15,7 @@ const MAX_PERCENT = 92;
 function phrasesFor(driverCount: number, passengerCount: number): string[] {
   return [
     "Récupération des temps de trajet…",
-    `Optimisation des tournées pour ${driverCount} ${driverCount > 1 ? "conducteurs" : "conducteur"}…`,
+    `Optimisation des trajets pour ${driverCount} ${driverCount > 1 ? "conducteurs" : "conducteur"}…`,
     `Répartition de ${passengerCount} ${passengerCount > 1 ? "passagers" : "passager"}…`,
     "Dernières vérifications…",
   ];
@@ -62,7 +62,12 @@ export function SolvingProgress({
     <div className="flex max-w-sm flex-col gap-2">
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
         <div
-          className="h-full rounded-full bg-ink transition-[width] duration-200 ease-out"
+          // Pas de transition CSS ici : `percent` est déjà interpolé à 60
+          // im/s par requestAnimationFrame ci-dessus. Une transition en plus
+          // sur la même propriété fait courir deux animations après la même
+          // cible à la fois, ce qui ralentit/lisse le rendu réel par rapport
+          // à la courbe calculée — plus sensible sur un CPU mobile.
+          className="h-full rounded-full bg-ink"
           style={{ width: `${percent}%` }}
         />
       </div>
