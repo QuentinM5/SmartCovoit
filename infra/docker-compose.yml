@@ -18,6 +18,7 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
@@ -30,6 +31,7 @@ services:
 
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: smartcovoit
       POSTGRES_PASSWORD: smartcovoit
@@ -47,6 +49,7 @@ services:
   osrm:
     image: osrm/osrm-backend:latest
     profiles: ["osrm"]
+    restart: unless-stopped
     ports:
       - "5001:5000"
     volumes:
