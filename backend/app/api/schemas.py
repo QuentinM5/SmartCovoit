@@ -31,8 +31,12 @@ class Located(BaseModel):
 
 class EventCreate(Located):
     name: str = Field(min_length=1, max_length=200)
-    direction: Direction
     depot_address: str = Field(min_length=1, max_length=500)
+    # Optionnel : généré côté client pour naviguer vers /events/{id} sans
+    # attendre la réponse de ce POST (cf. app/page.tsx) ; absent, le serveur
+    # en génère un comme avant. Collision UUID v4 : risque nul en pratique,
+    # pas de traitement particulier au-delà de l'erreur d'intégrité naturelle.
+    id: uuid.UUID | None = None
 
 
 class EventOut(BaseModel):
@@ -40,7 +44,6 @@ class EventOut(BaseModel):
 
     id: uuid.UUID
     name: str
-    direction: Direction
     depot_address: str
     depot_lat: float
     depot_lon: float
@@ -51,6 +54,7 @@ class DriverCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     seats: int = Field(gt=0, le=20)
     address: str = Field(min_length=1, max_length=500)
+    direction: Direction
 
 
 class DriverOut(BaseModel):
@@ -62,11 +66,13 @@ class DriverOut(BaseModel):
     address: str
     lat: float
     lon: float
+    direction: Direction
 
 
 class PassengerCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     address: str = Field(min_length=1, max_length=500)
+    direction: Direction
 
 
 class PassengerOut(BaseModel):
@@ -77,6 +83,7 @@ class PassengerOut(BaseModel):
     address: str
     lat: float
     lon: float
+    direction: Direction
 
 
 class EventDetailOut(EventOut):
@@ -111,9 +118,21 @@ class RouteOut(BaseModel):
     geometry: list[list[float]] | None = None
 
 
+class MoveStopIn(BaseModel):
+    """Déplace un passager vers une tournée (la sienne ou une autre) après
+    un calcul — cf. `move_stop` dans routes.py. `driver_id` peut être le
+    conducteur déjà actuel du passager : dans ce cas, retirer puis
+    réinsérer via l'insertion la moins chère revient à recalculer sa
+    meilleure position parmi les arrêts déjà présents."""
+
+    passenger_id: uuid.UUID
+    driver_id: uuid.UUID
+
+
 class SolutionOut(BaseModel):
     id: uuid.UUID
     event_id: uuid.UUID
+    direction: Direction
     total_distance_m: int
     total_duration_s: int | None = None
     matrix_source: str

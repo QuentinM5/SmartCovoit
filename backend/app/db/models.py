@@ -27,17 +27,24 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _direction_column() -> SAEnum:
+    # values_callable : sans ça, SQLAlchemy sérialise un enum.Enum Python par
+    # son .name ("RAMASSAGE") plutôt que sa .value ("ramassage"), qui ne
+    # correspond pas aux valeurs du type Postgres créé par la migration. Une
+    # fabrique plutôt qu'une instance partagée : chaque colonne a besoin de
+    # son propre objet type (le réutiliser tel quel entre plusieurs colonnes
+    # provoque des soucis de nommage de contrainte côté SQLAlchemy).
+    return SAEnum(Direction, name="direction", values_callable=lambda enum_cls: [e.value for e in enum_cls])
+
+
 class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
     name: Mapped[str] = mapped_column(String(200))
-    # values_callable : sans ça, SQLAlchemy sérialise un enum.Enum Python par
-    # son .name ("RAMASSAGE") plutôt que sa .value ("ramassage"), qui ne
-    # correspond pas aux valeurs du type Postgres créé par la migration.
-    direction: Mapped[Direction] = mapped_column(
-        SAEnum(Direction, name="direction", values_callable=lambda enum_cls: [e.value for e in enum_cls])
-    )
+    # Le sens du trajet vit maintenant par inscription (Driver/Passenger),
+    # pas au niveau de l'événement : un événement porte l'aller et le retour
+    # à la fois, cf. migration 0002.
     depot_address: Mapped[str] = mapped_column(String(500))
     depot_lat: Mapped[float] = mapped_column(Float)
     depot_lon: Mapped[float] = mapped_column(Float)
@@ -61,6 +68,9 @@ class Driver(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
     event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
+    # S'inscrire aux deux sens = deux lignes (une par sens), même nom/adresse
+    # — pas de table de jonction séparée, cf. migration 0002.
+    direction: Mapped[Direction] = mapped_column(_direction_column())
     name: Mapped[str] = mapped_column(String(200))
     seats: Mapped[int] = mapped_column(Integer)
     address: Mapped[str] = mapped_column(String(500))
@@ -76,6 +86,7 @@ class Passenger(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
     event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
+    direction: Mapped[Direction] = mapped_column(_direction_column())
     name: Mapped[str] = mapped_column(String(200))
     address: Mapped[str] = mapped_column(String(500))
     lat: Mapped[float] = mapped_column(Float)
@@ -93,6 +104,9 @@ class SolutionRecord(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
     event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
+    # Une tournée "aller" et une tournée "retour" sont deux historiques
+    # indépendants pour le même événement.
+    direction: Mapped[Direction] = mapped_column(_direction_column())
     total_distance_m: Mapped[int] = mapped_column(Integer)
     matrix_source: Mapped[str] = mapped_column(String(20))
     fallback_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
