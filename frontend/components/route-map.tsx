@@ -245,7 +245,7 @@ export function RouteMap({
   if (error) {
     return (
       <div className="rounded-lg border border-line bg-surface px-4 py-6 text-sm text-muted">
-        Carte indisponible ({error}). Les tournées restent lisibles ci-dessous.
+        Carte indisponible ({error}). Les trajets restent lisibles ci-dessous.
       </div>
     );
   }
@@ -254,7 +254,7 @@ export function RouteMap({
     <div
       ref={containerRef}
       role="img"
-      aria-label="Carte des tournées calculées"
+      aria-label="Carte des trajets calculés"
       className="h-[22rem] w-full overflow-hidden rounded-lg border border-line sm:h-[26rem] lg:h-[34rem]"
     />
   );

@@ -12,7 +12,6 @@ export type Direction = "ramassage" | "dispersion";
 export interface EventOut {
   id: string;
   name: string;
-  direction: Direction;
   depot_address: string;
   depot_lat: number;
   depot_lon: number;
@@ -26,6 +25,7 @@ export interface Driver {
   address: string;
   lat: number;
   lon: number;
+  direction: Direction;
 }
 
 export interface Passenger {
@@ -34,6 +34,7 @@ export interface Passenger {
   address: string;
   lat: number;
   lon: number;
+  direction: Direction;
 }
 
 export interface EventDetail extends EventOut {
@@ -67,6 +68,7 @@ export interface Route {
 export interface Solution {
   id: string;
   event_id: string;
+  direction: Direction;
   total_distance_m: number;
   total_duration_s?: number | null;
   matrix_source: "google" | "osrm" | "haversine";
@@ -114,7 +116,7 @@ export interface AddressFields {
 }
 
 export function createEvent(
-  data: { name: string; direction: Direction; depot_address: string } & AddressFields,
+  data: { name: string; depot_address: string; id?: string } & AddressFields,
 ) {
   return request<EventOut>("/events", { method: "POST", body: JSON.stringify(data) });
 }
@@ -125,14 +127,14 @@ export function getEvent(id: string) {
 
 export function addDriver(
   eventId: string,
-  data: { name: string; seats: number; address: string } & AddressFields,
+  data: { name: string; seats: number; address: string; direction: Direction } & AddressFields,
 ) {
   return request<Driver>(`/events/${eventId}/drivers`, { method: "POST", body: JSON.stringify(data) });
 }
 
 export function addPassenger(
   eventId: string,
-  data: { name: string; address: string } & AddressFields,
+  data: { name: string; address: string; direction: Direction } & AddressFields,
 ) {
   return request<Passenger>(`/events/${eventId}/passengers`, { method: "POST", body: JSON.stringify(data) });
 }
@@ -145,10 +147,26 @@ export function deletePassenger(eventId: string, passengerId: string) {
   return request<void>(`/events/${eventId}/passengers/${passengerId}`, { method: "DELETE" });
 }
 
-export function solveEvent(eventId: string) {
-  return request<Solution>(`/events/${eventId}/solve`, { method: "POST" });
+export function solveEvent(eventId: string, direction: Direction) {
+  return request<Solution>(`/events/${eventId}/solve?direction=${direction}`, { method: "POST" });
 }
 
-export function getSolution(eventId: string) {
-  return request<Solution>(`/events/${eventId}/solution`);
+export function getSolution(eventId: string, direction: Direction) {
+  return request<Solution>(`/events/${eventId}/solution?direction=${direction}`);
+}
+
+/**
+ * Déplace un passager vers une tournée (la sienne ou une autre) après un
+ * calcul — `driverId` identique au conducteur actuel du passager recalcule
+ * simplement sa meilleure position parmi les arrêts déjà présents. Le
+ * serveur choisit la position la moins coûteuse dans la tournée cible ; pas
+ * de contrôle de capacité côté serveur (surcapacité tolérée si le client la
+ * confirme explicitement — cf. `pendingOvercapacity` dans
+ * event-page-client.tsx).
+ */
+export function moveStop(eventId: string, passengerId: string, driverId: string) {
+  return request<Solution>(`/events/${eventId}/solution/move-stop`, {
+    method: "POST",
+    body: JSON.stringify({ passenger_id: passengerId, driver_id: driverId }),
+  });
 }

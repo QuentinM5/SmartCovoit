@@ -90,16 +90,61 @@ export function DirectionGlyph({
 
 const OPTIONS: { value: Direction; title: string; help: string }[] = [
   {
-    value: "dispersion",
-    title: "Dispersion",
-    help: "Tout le monde part du point de rendez-vous et rentre chez soi.",
-  },
-  {
     value: "ramassage",
-    title: "Ramassage",
+    title: "Aller",
     help: "Chacun part de chez soi et rejoint le point de rendez-vous.",
   },
+  {
+    value: "dispersion",
+    title: "Retour",
+    help: "Tout le monde part du point de rendez-vous et rentre chez soi.",
+  },
 ];
+
+/**
+ * À l'inscription, une personne peut participer à l'aller, au retour, ou
+ * aux deux (même adresse dans les deux cas — seul son rôle diffère, cf.
+ * `addressCopy` dans event-page-client.tsx) : sélection multiple, pas
+ * exclusive comme `DirectionPicker` ci-dessous.
+ */
+export function DirectionCheckboxes({
+  value,
+  onChange,
+}: {
+  value: Direction[];
+  onChange: (next: Direction[]) => void;
+}) {
+  function toggle(direction: Direction) {
+    onChange(value.includes(direction) ? value.filter((d) => d !== direction) : [...value, direction]);
+  }
+
+  return (
+    <fieldset>
+      <legend className="mb-2 text-sm font-medium">Trajet(s)</legend>
+      <div className="grid grid-cols-2 gap-2">
+        {OPTIONS.map((option) => {
+          const checked = value.includes(option.value);
+          return (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-inbound ${
+                checked ? "border-ink bg-ink text-paper" : "border-line text-muted hover:border-muted"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggle(option.value)}
+                className="sr-only"
+              />
+              {option.title}
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
 
 export function DirectionPicker({
   value,

@@ -20,6 +20,9 @@ export interface ResolvedStop {
   lon: number;
   cumulativeDistanceM: number;
   cumulativeDurationS?: number | null;
+  /** Id du passager — présent uniquement pour kind === "passenger", utilisé
+   * pour le déplacer par glisser-déposer (cf. use-passenger-drag.ts). */
+  id?: string;
 }
 
 export function resolveStops(route: Route, event: EventDetail): ResolvedStop[] {
@@ -37,6 +40,7 @@ export function resolveStops(route: Route, event: EventDetail): ResolvedStop[] {
           lon: passenger.lon,
           cumulativeDistanceM: stop.cumulative_distance_m,
           cumulativeDurationS: stop.cumulative_duration_s,
+          id: passenger.id,
         },
       ];
     }
@@ -62,7 +66,7 @@ export function resolveStops(route: Route, event: EventDetail): ResolvedStop[] {
       {
         kind: "driver",
         label:
-          event.direction === "dispersion"
+          driver.direction === "dispersion"
             ? `Retour chez ${driver.name}`
             : `Départ de chez ${driver.name}`,
         lat: driver.lat,

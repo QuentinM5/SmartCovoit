@@ -1,7 +1,9 @@
 "use client";
 
-import { ExternalLink } from "lucide-react";
+import { useRef } from "react";
+import { ExternalLink, GripVertical } from "lucide-react";
 import { ROUTE_COLORS } from "@/components/route-map";
+import type { DragInfo, DragStartParams } from "@/lib/use-passenger-drag";
 import {
   formatDistance,
   formatDuration,
@@ -10,12 +12,19 @@ import {
   type ResolvedStop,
 } from "@/lib/route";
 
+// Bref maintien tactile avant que le glisser démarre réellement (pas sur
+// souris, où le déclenchement immédiat ne pose aucun problème) — assez
+// court pour ne pas paraître poussif, assez long pour ne pas se déclencher
+// sur un tap accidentel.
+const TOUCH_HOLD_MS = 150;
+
 /**
  * Une tournée est une ligne avec des arrêts ordonnés — on la dessine comme
  * telle, à la manière d'un plan de transport, plutôt que comme une liste à
  * puces. La couleur reprend celle de la même tournée sur la carte.
  */
 export function RouteLine({
+  driverId,
   driverName,
   seats,
   distanceM,
@@ -23,7 +32,14 @@ export function RouteLine({
   stops,
   index,
   onHoverChange,
+  onPassengerDragStart,
+  isDropTarget,
+  draggingPassengerId,
+  pendingOvercapacity,
+  onConfirmOvercapacity,
+  onCancelOvercapacity,
 }: {
+  driverId: string;
   driverName: string;
   seats: number;
   distanceM: number;
@@ -31,20 +47,45 @@ export function RouteLine({
   stops: ResolvedStop[];
   index: number;
   onHoverChange?: (active: boolean) => void;
+  /** Démarre un glisser depuis un arrêt passager — cf. use-passenger-drag.ts. */
+  onPassengerDragStart?: (params: DragStartParams, info: DragInfo) => void;
+  /** Cette tournée est survolée pendant un glisser en cours ailleurs. */
+  isDropTarget?: boolean;
+  /** Id du passager actuellement glissé (peut appartenir à une autre tournée). */
+  draggingPassengerId?: string | null;
+  /** Une dépose sur cette tournée pleine attend une confirmation explicite. */
+  pendingOvercapacity?: boolean;
+  onConfirmOvercapacity?: () => void;
+  onCancelOvercapacity?: () => void;
 }) {
   const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
   const mapsUrl = googleMapsDirectionsUrl(stops);
   const passengerCount = stops.filter((s) => s.kind === "passenger").length;
   const truncated = Math.max(0, stops.length - 2 - MAX_WAYPOINTS);
+  const overCapacity = passengerCount > seats;
+  // Un seul geste de glisser à la fois par tournée en pratique — un minuteur
+  // partagé entre les lignes de cette carte suffit, pas besoin d'une carte
+  // par passager.
+  const holdTimer = useRef<number | null>(null);
+
+  function cancelPendingHold() {
+    if (holdTimer.current !== null) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  }
 
   return (
     <article
       data-surface
+      data-driver-id={driverId}
       onMouseEnter={() => onHoverChange?.(true)}
       onMouseLeave={() => onHoverChange?.(false)}
       onFocus={() => onHoverChange?.(true)}
       onBlur={() => onHoverChange?.(false)}
-      className="animate-rise rounded-lg border border-line bg-surface p-4 transition hover:border-muted"
+      className={`animate-rise rounded-lg border p-4 transition ${
+        isDropTarget ? "border-inbound bg-inbound/5" : "border-line bg-surface hover:border-muted"
+      }`}
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -67,9 +108,26 @@ export function RouteLine({
             <span className="font-mono">{formatDistance(distanceM)}</span>
           )}
           <span aria-hidden="true"> · </span>
-          {passengerCount} / {seats} {seats > 1 ? "places" : "place"}
+          <span className={overCapacity ? "text-danger" : ""}>
+            {passengerCount} / {seats} {seats > 1 ? "places" : "place"}
+          </span>
+          {overCapacity && <span className="text-danger"> · surcapacité</span>}
         </p>
       </header>
+
+      {pendingOvercapacity && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-xs text-danger">
+          <span className="flex-1">
+            Cette voiture est complète ({passengerCount}/{seats}). Déposer quand même ?
+          </span>
+          <button type="button" onClick={onConfirmOvercapacity} className="font-medium underline underline-offset-2">
+            Confirmer
+          </button>
+          <button type="button" onClick={onCancelOvercapacity} className="text-muted underline underline-offset-2">
+            Annuler
+          </button>
+        </div>
+      )}
 
       <ol className="mt-3">
         {stops.map((stop, i) => {
@@ -80,8 +138,15 @@ export function RouteLine({
             stop.kind === "passenger"
               ? stops.slice(0, i + 1).filter((s) => s.kind === "passenger").length
               : null;
+          const draggable = stop.kind === "passenger" && stop.id != null && onPassengerDragStart != null;
+          const beingDragged = stop.kind === "passenger" && stop.id === draggingPassengerId;
           return (
-            <li key={i} className="grid grid-cols-[1rem_1fr_auto] items-start gap-x-3">
+            <li
+              key={i}
+              className={`grid grid-cols-[1rem_1fr_auto_1.5rem] items-start gap-x-3 ${
+                beingDragged ? "opacity-30" : ""
+              }`}
+            >
               <span className="grid justify-items-center" aria-hidden="true">
                 <StopNode kind={stop.kind} color={color} number={passengerNumber} />
                 {!last && (
@@ -106,6 +171,50 @@ export function RouteLine({
                     <span>{formatDistance(stop.cumulativeDistanceM)}</span>
                   ))}
               </span>
+
+              {draggable ? (
+                // Seule zone qui démarre un glisser : le reste de la ligne
+                // reste une zone de scroll 100 % native sur tactile — sans
+                // ça, reprendre un scroll interrompu au milieu de la liste
+                // déplace la personne au lieu de faire défiler la page.
+                <button
+                  type="button"
+                  aria-label={`Déplacer ${stop.label} vers un autre trajet`}
+                  onPointerDown={(e) => {
+                    const params: DragStartParams = {
+                      target: e.currentTarget,
+                      pointerId: e.pointerId,
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                    };
+                    const info: DragInfo = {
+                      passengerId: stop.id!,
+                      passengerName: stop.label,
+                      fromDriverId: driverId,
+                    };
+                    if (e.pointerType !== "touch") {
+                      onPassengerDragStart!(params, info);
+                      return;
+                    }
+                    // Tactile : bref maintien avant que ça bouge vraiment —
+                    // vibration au moment où c'est pris, signal net que la
+                    // personne "part" avec le doigt plutôt qu'un tap perdu.
+                    holdTimer.current = window.setTimeout(() => {
+                      holdTimer.current = null;
+                      navigator.vibrate?.(10);
+                      onPassengerDragStart!(params, info);
+                    }, TOUCH_HOLD_MS);
+                  }}
+                  onPointerUp={cancelPendingHold}
+                  onPointerCancel={cancelPendingHold}
+                  style={{ touchAction: "none" }}
+                  className="-m-2 grid shrink-0 cursor-grab place-items-center rounded p-2 text-muted transition hover:text-ink active:cursor-grabbing"
+                >
+                  <GripVertical className="size-4" strokeWidth={1.75} aria-hidden="true" />
+                </button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
             </li>
           );
         })}
