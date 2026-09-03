@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+import anyio
 import jwt
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,10 @@ def get_geocoder(request: Request) -> NominatimClient:
 
 def get_matrix_provider(request: Request) -> FallbackMatrixProvider:
     return request.app.state.matrix_provider
+
+
+def get_solve_semaphore(request: Request) -> anyio.Semaphore:
+    return request.app.state.solve_semaphore
 
 
 async def get_current_user(

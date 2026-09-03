@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import anyio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -46,6 +47,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         haversine=HaversineProvider(road_factor=settings.haversine_road_factor),
         google=google,
     )
+
+    # Borne le nombre de solves OR-Tools concurrents (cf. Settings.max_concurrent_solves) —
+    # même patron que les deux singletons ci-dessus : construit une fois, partagé
+    # entre requêtes via app.state.
+    app.state.solve_semaphore = anyio.Semaphore(settings.max_concurrent_solves)
 
     yield
 

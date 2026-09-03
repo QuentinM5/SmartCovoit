@@ -53,6 +53,32 @@ class Settings(BaseSettings):
     # jeton d'identité présenté a bien été émis pour cette appli.
     google_oauth_client_id: str = ""
 
+    # Identifie quelle instance répond (ex. "truenas"/"railway") dans
+    # /health et le journal d'événements — sans ça, impossible de savoir
+    # laquelle des deux sert le trafic pendant une bascule de failover.
+    instance_name: str = "inconnue"
+
+    # /solve construit une matrice de distances en O(n²) éléments, facturée
+    # à l'élément côté Google Routes : ce plafond est autant un garde-fou de
+    # coût que de charge. 40 participants -> 1681 éléments par calcul.
+    max_participants_per_event: int = 40
+
+    # Anti-rafale sur /solve : chaque calcul relance la matrice complète
+    # (payante) et OR-Tools. Un cooldown court suffit à absorber un double
+    # clic sans gêner un usage normal.
+    solve_cooldown_s: int = 20
+
+    # Borne le nombre de threads CPU-bound simultanés (OR-Tools tourne hors
+    # de la boucle d'événements via anyio.to_thread) — limite par process,
+    # même logique assumée que le rate-limiter Nominatim (1 req/s "par
+    # process", cf. app/geocoding/nominatim.py).
+    max_concurrent_solves: int = 2
+
+    # Un déplacement par glisser-déposer (move-stop) insère une nouvelle
+    # SolutionRecord à chaque geste : sans purge, l'historique d'un
+    # événement très manipulé croît sans borne.
+    max_solutions_kept_per_direction: int = 20
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

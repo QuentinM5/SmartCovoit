@@ -19,7 +19,9 @@
  */
 export type FailureKind = "transport" | "server-error";
 
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+// Exporté : réutilisé par rate-limit.ts (une lecture n'est jamais comptée
+// contre un quota d'écriture).
+export const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 export function shouldReplay(method: string, kind: FailureKind): boolean {
   if (kind === "transport") return true;

@@ -26,11 +26,14 @@
  */
 
 import { shouldReplay, type FailureKind } from "./failover-policy";
+import { pickRateLimitBucket } from "./rate-limit";
 
 export interface Env {
   PRIMARY_API_URL: string;
   FALLBACK_API_URL: string;
   REQUEST_TIMEOUT_MS: string;
+  AUTH_RATE_LIMIT: RateLimit;
+  WRITE_RATE_LIMIT: RateLimit;
 }
 
 function targetUrl(baseUrl: string, request: Request): string {
@@ -74,6 +77,22 @@ function describe(request: Request): string {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const bucket = pickRateLimitBucket(url.pathname, request.method);
+    if (bucket) {
+      // CF-Connecting-IP posée par Cloudflare à l'edge, jamais falsifiable
+      // par le client contrairement à X-Forwarded-For.
+      const ip = request.headers.get("CF-Connecting-IP") ?? "inconnue";
+      const limiter = bucket === "auth" ? env.AUTH_RATE_LIMIT : env.WRITE_RATE_LIMIT;
+      const { success } = await limiter.limit({ key: ip });
+      if (!success) {
+        return new Response("Trop de requêtes. Réessaie dans une minute.", {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        });
+      }
+    }
+
     const timeoutMs = Number(env.REQUEST_TIMEOUT_MS) || 25000;
 
     // `request.clone()` avant la première tentative : le corps d'une requête

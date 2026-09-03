@@ -9,18 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import datetime, timezone
 from typing import TypeVar
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
 from app.api import schemas
-from app.api.deps import get_current_user, get_db, get_geocoder, get_matrix_provider
+from app.api.deps import get_current_user, get_db, get_geocoder, get_matrix_provider, get_solve_semaphore
 from app.core.config import Settings, get_settings
 from app.core.security import (
     hash_password,
@@ -30,11 +31,11 @@ from app.core.security import (
 )
 from app.db.models import Driver, Event, Passenger, SolutionRecord, User
 from app.distance.fallback import FallbackMatrixProvider
-from app.distance.types import Coord
+from app.distance.types import Coord, Polyline
 from app.geocoding.nominatim import NominatimClient
 from app.geocoding.types import GeocodingError
 from app.solver.errors import SolverError
-from app.solver.model import Direction, DriverSpec, PassengerSpec, SolveRequest
+from app.solver.model import Direction, DriverSpec, PassengerSpec, Route as SolverRoute, SolveRequest
 from app.solver.vrp import solve
 
 router = APIRouter()
@@ -51,8 +52,21 @@ _LOGIN_TIMING_GUARD_HASH = hash_password("smartcovoit-timing-guard-not-a-real-ac
 
 
 @router.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, str]:
+    # `instance` répond à la question directe des chantiers de failover :
+    # laquelle des deux instances a effectivement servi cette requête. `db`
+    # vérifie une vraie requête (pas juste que le process a démarré) — sans
+    # ça un backend qui répond mais ne peut plus atteindre Neon se dirait
+    # "ok".
+    try:
+        await db.execute(select(1))
+        db_status = "ok"
+    except Exception:  # la base peut être injoignable pour mille raisons ; toutes se valent ici.
+        db_status = "erreur"
+    return {"status": "ok", "instance": settings.instance_name, "db": db_status}
 
 
 @router.post("/auth/signup", response_model=schemas.AuthOut, status_code=201)
@@ -248,8 +262,22 @@ async def add_driver(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
+    settings: Settings = Depends(get_settings),
 ) -> Driver:
     await _get_event_or_404(db, event_id)
+    if body.id is not None:
+        # Rejeu d'un POST déjà appliqué (cf. failover-policy.ts) : on renvoie
+        # la ligne existante avant même de vérifier le plafond, sinon un
+        # événement tout juste arrivé à la limite rejetterait le rejeu de sa
+        # propre dernière inscription réussie.
+        existing = await db.get(Driver, body.id)
+        if existing is not None and existing.event_id == event_id:
+            return existing
+    if _participant_cap_reached(await _participant_count(db, event_id), settings.max_participants_per_event):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cet événement a atteint son nombre maximum d'inscrits ({settings.max_participants_per_event}).",
+        )
     lat, lon = await _locate_or_422(geocoder, body.address, body.coords)
 
     driver_id = body.id or uuid.uuid4()
@@ -287,8 +315,18 @@ async def add_passenger(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
+    settings: Settings = Depends(get_settings),
 ) -> Passenger:
     await _get_event_or_404(db, event_id)
+    if body.id is not None:
+        existing = await db.get(Passenger, body.id)
+        if existing is not None and existing.event_id == event_id:
+            return existing
+    if _participant_cap_reached(await _participant_count(db, event_id), settings.max_participants_per_event):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cet événement a atteint son nombre maximum d'inscrits ({settings.max_participants_per_event}).",
+        )
     lat, lon = await _locate_or_422(geocoder, body.address, body.coords)
 
     passenger_id = body.id or uuid.uuid4()
@@ -356,6 +394,7 @@ async def solve_event(
     db: AsyncSession = Depends(get_db),
     matrix_provider: FallbackMatrixProvider = Depends(get_matrix_provider),
     settings: Settings = Depends(get_settings),
+    solve_semaphore: anyio.Semaphore = Depends(get_solve_semaphore),
 ) -> schemas.SolutionOut:
     event = await _load_event_with_participants(db, event_id)
     # Réservé à l'organisateur : c'est lui qui décide de (re)calculer les
@@ -366,6 +405,22 @@ async def solve_event(
 
     if not drivers:
         raise HTTPException(status_code=422, detail="Aucun conducteur inscrit pour ce trajet.")
+
+    # Anti-rafale : chaque calcul relance la matrice complète (payante côté
+    # Google Routes) et OR-Tools — un double clic ou une bascule de failover
+    # ne doit pas relancer deux calculs coup sur coup pour le même trajet.
+    last_solved_at = await db.scalar(
+        select(func.max(SolutionRecord.created_at)).where(
+            SolutionRecord.event_id == event_id, SolutionRecord.direction == direction
+        )
+    )
+    wait_s = _seconds_until_next_solve(last_solved_at, datetime.now(timezone.utc), settings.solve_cooldown_s)
+    if wait_s > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Un calcul vient d'être lancé pour ce trajet. Réessaie dans {round(wait_s)} s.",
+            headers={"Retry-After": str(round(wait_s))},
+        )
 
     coords = [Coord(event.depot_lat, event.depot_lon)]
     coords += [Coord(d.lat, d.lon) for d in drivers]
@@ -395,7 +450,11 @@ async def solve_event(
     try:
         # OR-Tools est bloquant (CPU) : on l'exécute hors de la boucle
         # d'événements pour ne pas geler les autres requêtes pendant le solve.
-        solution = await anyio.to_thread.run_sync(solve, solve_request)
+        # Le sémaphore borne le nombre de threads CPU-bound simultanés
+        # (cf. Settings.max_concurrent_solves) plutôt que d'en laisser
+        # démarrer un par requête sans limite.
+        async with solve_semaphore:
+            solution = await anyio.to_thread.run_sync(solve, solve_request)
     except SolverError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -405,12 +464,15 @@ async def solve_event(
 
     # Tracés routiers réels, en parallèle : purement pour l'affichage, et
     # renvoyés à `None` un par un si OSRM ne suit pas (cf. FallbackMatrixProvider).
-    geometries = await asyncio.gather(
-        *(
-            matrix_provider.route_geometry([coords[stop.node] for stop in route.stops])
-            for route in solution.routes
-        )
-    )
+    # Bornée à 4 en vol plutôt qu'un gather sans limite : un événement à
+    # 40 conducteurs ne doit pas ouvrir 40 requêtes OSRM/Google d'un coup.
+    geometry_semaphore = asyncio.Semaphore(4)
+
+    async def _bounded_route_geometry(route: SolverRoute) -> Polyline | None:
+        async with geometry_semaphore:
+            return await matrix_provider.route_geometry([coords[stop.node] for stop in route.stops])
+
+    geometries = await asyncio.gather(*(_bounded_route_geometry(route) for route in solution.routes))
 
     routes_out = [
         schemas.RouteOut(
@@ -490,6 +552,7 @@ async def move_stop(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     matrix_provider: FallbackMatrixProvider = Depends(get_matrix_provider),
+    settings: Settings = Depends(get_settings),
 ) -> schemas.SolutionOut:
     """Déplace un passager vers une tournée après un calcul (glisser-déposer
     côté client). `driver_id` peut être le conducteur déjà actuel du
@@ -620,6 +683,26 @@ async def move_stop(
         payload=jsonable_encoder(new_routes),
     )
     db.add(new_record)
+    # Flush (pas commit) : attribue id/created_at à new_record pour pouvoir
+    # le comparer aux autres lignes ci-dessous, sans encore valider la
+    # transaction.
+    await db.flush()
+
+    # Un geste de glisser-déposer insère une ligne à chaque fois : sans
+    # purge, l'historique d'un événement très manipulé croît sans borne.
+    # Dans la même transaction que l'insertion, pour ne jamais valider l'une
+    # sans l'autre.
+    existing_records = (
+        await db.scalars(
+            select(SolutionRecord).where(
+                SolutionRecord.event_id == event.id, SolutionRecord.direction == direction
+            )
+        )
+    ).all()
+    for stale in _records_to_prune(list(existing_records), settings.max_solutions_kept_per_direction):
+        if stale.id != new_record.id:
+            await db.delete(stale)
+
     await db.commit()
     await db.refresh(new_record)
 
@@ -634,6 +717,18 @@ async def move_stop(
         routes=new_routes,
         created_at=new_record.created_at,
     )
+
+
+async def _participant_count(db: AsyncSession, event_id: uuid.UUID) -> int:
+    """Conducteurs + passagers, tous sens confondus : c'est la taille qui
+    borne la matrice de /solve, pas le nombre par sens."""
+    driver_count = await db.scalar(
+        select(func.count()).select_from(Driver).where(Driver.event_id == event_id)
+    )
+    passenger_count = await db.scalar(
+        select(func.count()).select_from(Passenger).where(Passenger.event_id == event_id)
+    )
+    return (driver_count or 0) + (passenger_count or 0)
 
 
 def _total_duration_s(routes: list[schemas.RouteOut]) -> int | None:
@@ -688,6 +783,29 @@ def _can_remove_participant(event: Event, participant_user_id: uuid.UUID | None,
         or event.owner_id is None
         or event.owner_id == current_user.id
     )
+
+
+def _participant_cap_reached(current_count: int, cap: int) -> bool:
+    return current_count >= cap
+
+
+def _seconds_until_next_solve(last_solved_at: datetime | None, now: datetime, cooldown_s: int) -> float:
+    """Aucun calcul précédent -> pas d'attente. Sinon, ce qui reste du
+    cooldown depuis le dernier calcul de cet (événement, sens) — jamais
+    négatif."""
+    if last_solved_at is None:
+        return 0.0
+    elapsed = (now - last_solved_at).total_seconds()
+    return max(0.0, cooldown_s - elapsed)
+
+
+def _records_to_prune(records: list[SolutionRecord], keep: int) -> list[SolutionRecord]:
+    """Renvoie les enregistrements au-delà des `keep` plus récents (peu
+    importe leur ordre en entrée) — utilisé pour élaguer l'historique d'un
+    (événement, sens) après un move-stop, qui insère une ligne à chaque
+    geste."""
+    ordered = sorted(records, key=lambda r: r.created_at, reverse=True)
+    return ordered[keep:]
 
 
 _Participant = TypeVar("_Participant", Driver, Passenger)

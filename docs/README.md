@@ -58,6 +58,11 @@ des variables d'environnement, jamais en dur dans le code.
 | `NOMINATIM_USER_AGENT` | Identifiant requis par la politique d'usage Nominatim | — |
 | `SOLVER_TIME_LIMIT_S` | Limite de temps (s) laissée à OR-Tools | `10` |
 | `CORS_ORIGINS` | Origines autorisées, séparées par des virgules | `http://localhost:3000` |
+| `INSTANCE_NAME` | Nom de l'instance (ex. `truenas`/`railway`), pour `/health` et le journal d'événements | `inconnue` |
+| `MAX_PARTICIPANTS_PER_EVENT` | Plafond d'inscrits par événement (garde-fou de coût sur `/solve`) | `40` |
+| `SOLVE_COOLDOWN_S` | Délai minimum entre deux calculs pour le même (événement, sens) | `20` |
+| `MAX_CONCURRENT_SOLVES` | Nombre de calculs OR-Tools simultanés, par process | `2` |
+| `MAX_SOLUTIONS_KEPT_PER_DIRECTION` | Historique de solutions conservé par (événement, sens) après un move-stop | `20` |
 | `NEXT_PUBLIC_API_URL` | Seule URL d'API que le frontend appelle | `http://localhost:8000` |
 
 ## Tests
