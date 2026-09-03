@@ -11,10 +11,11 @@ import uuid
 from datetime import date as date_
 from datetime import datetime, timezone
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
 from app.db.base import Base
 from app.solver.model import Direction
@@ -91,6 +92,15 @@ class Event(Base):
     # — sinon chaque lecture d'événement rapatrierait jusqu'à 3 Mo pour rien.
     cover_image: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     cover_image_content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Barème du partage de frais, ajustable par l'organisateur. Nuls = valeurs
+    # par défaut du serveur (cf. Settings.default_fuel_price_per_l et
+    # default_consumption_l_per_100km) : centraliser les défauts côté serveur
+    # garantit que tous les clients (et les deux instances backend) affichent
+    # le même chiffre, ajustable sans redéployer le frontend. Ce sont des
+    # molettes de réglage, pas de la comptabilité : Float suffit, pas besoin
+    # de Numeric.
+    fuel_price_per_l: Mapped[float | None] = mapped_column(Float, nullable=True)
+    consumption_l_per_100km: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     @property
     def has_cover_image(self) -> bool:
@@ -159,6 +169,14 @@ class SolutionRecord(Base):
     avec `app.solver.model.Solution`, le type pur renvoyé par le solveur."""
 
     __tablename__ = "solutions"
+    __table_args__ = (
+        # `_load_latest_solution_record_or_404` (routes.py) trie exactement
+        # là-dessus pour prendre la plus récente d'un (event, direction) ;
+        # sans cet index composite, chaque lecture de solution balaie toutes
+        # les lignes de l'événement. Ascendant suffit : un btree se parcourt
+        # aussi bien à l'envers pour un `ORDER BY created_at DESC LIMIT 1`.
+        Index("ix_solutions_event_direction_created", "event_id", "direction", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
     event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
@@ -172,6 +190,42 @@ class SolutionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     event: Mapped["Event"] = relationship(back_populates="solutions")
+
+
+class EventLog(Base):
+    """Télémétrie serveur minimale : un fait métier par ligne (événement créé,
+    inscription, calcul lancé...). Volontairement séparée de PostHog (parcours
+    et entonnoirs côté navigateur, cf. lib/telemetry.ts) : un fait n'est
+    journalisé qu'à l'endroit où il est vrai — le serveur sait ce qui a été
+    écrit en base, le client sait ce que l'humain a vu et cliqué.
+
+    `instance` (ex. "truenas"/"railway") rend enfin observable quelle instance
+    sert le trafic — la question directe derrière les chantiers de failover.
+    Aucune donnée personnelle dans `props` : uniquement des ids et des
+    compteurs.
+    """
+
+    __tablename__ = "events_log"
+    __table_args__ = (Index("ix_events_log_name_created_at", "name", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    # `server_default=func.now()` plutôt que le `default=_utcnow` applicatif
+    # utilisé ailleurs dans ce fichier : c'est de l'ordonnancement entre deux
+    # instances aux horloges potentiellement décalées, il doit venir de la
+    # base plutôt que du process qui écrit.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    name: Mapped[str] = mapped_column(String(50))
+    instance: Mapped[str] = mapped_column(String(20))
+    # SET NULL et non CASCADE : une ligne de journal doit survivre à la
+    # suppression de l'événement ou du compte, sinon les statistiques se
+    # réécrivent rétroactivement.
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("events.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    props: Mapped[dict] = mapped_column(JSONB, default=dict)
 
 
 class GeocodeCacheEntry(Base):
