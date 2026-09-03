@@ -5,7 +5,7 @@ Les conducteurs s'inscrivent avec leurs places disponibles et leur adresse,
 les passagers avec leur adresse ; le backend calcule l'affectation optimale
 (VRP capacitaire, OR-Tools) et produit une feuille de route par conducteur.
 
-En production : [![SmartCovoit](https://img.shields.io/badge/SmartCovoit-smartcovoit.qmeyer.fr-blue?style=flat-square&logo=google-chrome)](https://smartcovoit.qmeyer.fr) **https://smartcovoit.qmeyer.fr** — cf. `docs/deploiement.md`
+En production : [![SmartCovoit](https://img.shields.io/badge/SmartCovoit-smartcovoit.qmeyer.fr-blue?style=flat-square&logo=google-chrome)](https://smartcovoit.qmeyer.fr) [SmartCovoit](https://smartcovoit.qmeyer.fr) **https://smartcovoit.qmeyer.fr** — cf. `docs/deploiement.md`
 pour l'architecture (TrueNAS + secours cloud + Worker de failover) et les
 étapes de déploiement restantes.
 
