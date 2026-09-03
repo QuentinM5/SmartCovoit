@@ -2,12 +2,14 @@
 
 import { CalendarPlus } from "lucide-react";
 import { buildEventIcs, icsFileName } from "@/lib/ics";
+import { capture } from "@/lib/telemetry";
 import type { EventDetail } from "@/lib/api";
 
 /** Même esprit que CopyLinkButton : une action ponctuelle, pas de requête
  * serveur (tout le contenu du .ics est déjà dans `event`, cf. lib/ics.ts). */
 export function DownloadIcsButton({ event, className }: { event: EventDetail; className?: string }) {
   function handleDownload() {
+    capture("ics_downloaded", { event_id: event.id });
     const blob = new Blob([buildEventIcs(event)], { type: "text/calendar;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

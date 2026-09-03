@@ -13,8 +13,8 @@ pour l'architecture (TrueNAS + secours cloud + Worker de failover) et les
 
 ```
 /backend    FastAPI + OR-Tools + SQLAlchemy async — l'API et le solveur
-/frontend   Next.js — formulaires d'inscription et affichage des tournées
-/worker     Worker Cloudflare — répartiteur de failover (squelette, non déployé)
+/frontend   Next.js — comptes, formulaires d'inscription, affichage des tournées
+/worker     Worker Cloudflare — répartiteur de failover, déployé (cf. docs/deploiement.md)
 /infra      docker-compose.yml, Dockerfile.backend
 /docs       ce dossier
 ```
@@ -64,7 +64,14 @@ des variables d'environnement, jamais en dur dans le code.
 | `MAX_CONCURRENT_SOLVES` | Nombre de calculs OR-Tools simultanés, par process | `2` |
 | `MAX_SOLUTIONS_KEPT_PER_DIRECTION` | Historique de solutions conservé par (événement, sens) après un move-stop | `20` |
 | `ADMIN_EMAILS` | Emails autorisés à lire `GET /admin/stats`, séparés par des virgules. Vide = personne | (vide) |
+| `JWT_SECRET` | Secret de signature des jetons de session — **obligatoire**, identique sur toutes les instances backend, le serveur refuse de démarrer sans elle | — |
+| `GOOGLE_OAUTH_CLIENT_ID` | Identifiant client OAuth Google (public). Vide = connexion Google désactivée côté backend | (vide) |
 | `NEXT_PUBLIC_API_URL` | Seule URL d'API que le frontend appelle | `http://localhost:8000` |
+| `NEXT_PUBLIC_SITE_URL` | URL canonique du site (métadonnées, sitemap) | `http://localhost:3000` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Même valeur que `GOOGLE_OAUTH_CLIENT_ID`, exposée au navigateur | (vide) |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Clé Google Maps côté navigateur, restreinte par domaine | (vide) |
+| `NEXT_PUBLIC_POSTHOG_KEY` | Télémétrie de parcours, optionnelle. Vide = aucun script tiers chargé | (vide) |
+| `NEXT_PUBLIC_POSTHOG_HOST` | Hôte PostHog | `https://us.i.posthog.com` |
 
 ## Tests
 
@@ -75,10 +82,28 @@ pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
-27 tests couvrent : le solveur VRP (capacité, ramassage/dispersion,
+77 tests couvrent : le solveur VRP (capacité, ramassage/dispersion,
 conducteur unique, passagers > places disponibles), le repli OSRM →
-Haversine, le client Nominatim (cache, rate limit), et la normalisation de
-`DATABASE_URL` pour asyncpg.
+Haversine, le client Nominatim (cache, rate limit), la normalisation de
+`DATABASE_URL` pour asyncpg, l'authentification (mot de passe, JWT, Google),
+la matrice d'autorisation, et les garde-fous de charge (plafond d'inscrits,
+cooldown `/solve`, élagage de l'historique des solutions). Aucun de ces
+tests ne touche de vraie base de données — cf. le style des fichiers
+existants (fonctions pures, objets ORM instanciés sans être persistés).
+
+Frontend (Vitest — fonctions pures de `lib/` et composants client) :
+
+```bash
+cd frontend
+npm test
+```
+
+Worker (Vitest — logique de bascule et de rate-limit, fonctions pures) :
+
+```bash
+cd worker
+npm test
+```
 
 `backend/scripts/demo_solver.py` permet de visualiser des tournées sur un
 scénario réaliste (adresses parisiennes) sans passer par l'API :
@@ -95,8 +120,10 @@ python scripts/demo_solver.py
 - `docs/deploiement.md` — étapes manuelles restantes pour le déploiement
   (TrueNAS, instance cloud de secours, Worker Cloudflare, DNS).
 
-## Ce qui est hors scope de cette V1 (assumé, structuré pour être ajouté)
+## Ce qui est hors scope pour l'instant (assumé, structuré pour être ajouté)
 
 - Créneaux horaires / fenêtres de temps (VRPTW)
 - Contraintes de regroupement de sous-groupes
-- Authentification — formulaire public, sans compte utilisateur
+- Verrouillage de compte après plusieurs échecs de connexion (délibérément
+  absent — vecteur d'auto-déni de service ; le triplet limite de débit à
+  l'edge + coût bcrypt + journal `auth_login_failed` est jugé suffisant)

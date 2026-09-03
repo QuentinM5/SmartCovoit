@@ -11,6 +11,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getCurrentUser, type AuthResult, type User } from "@/lib/api";
 import { clearToken, getToken, setToken } from "@/lib/auth";
+import { identify, resetIdentity } from "@/lib/telemetry";
 
 interface AuthContextValue {
   user: User | null;
@@ -36,7 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     getCurrentUser()
-      .then(setUser)
+      .then((u) => {
+        setUser(u);
+        identify(u.id);
+      })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
@@ -44,11 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function login(result: AuthResult) {
     setToken(result.token);
     setUser(result.user);
+    identify(result.user.id);
   }
 
   function logout() {
     clearToken();
     setUser(null);
+    resetIdentity();
   }
 
   return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Link as LinkIcon } from "lucide-react";
+import { capture } from "@/lib/telemetry";
 
 const CONFIRM_DURATION_MS = 2000;
 
@@ -21,6 +22,7 @@ export function CopyLinkButton({ className }: { className?: string }) {
   }, []);
 
   async function handleCopy() {
+    capture("link_copied", { path: window.location.pathname });
     try {
       await navigator.clipboard.writeText(window.location.href);
     } catch {

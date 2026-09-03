@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth-provider";
+import { TelemetryProvider } from "@/components/telemetry-provider";
 import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-full font-sans antialiased">
+        <TelemetryProvider />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
