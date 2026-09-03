@@ -3,7 +3,9 @@
  *
  * Relaie chaque requête directement vers PRIMARY_API_URL (l'instance
  * TrueNAS) ; si elle échoue, tarde trop, ou renvoie une erreur serveur
- * (5xx), bascule sur FALLBACK_API_URL (l'instance cloud de secours).
+ * (5xx), bascule sur FALLBACK_API_URL (l'instance cloud de secours) — sauf
+ * pour une écriture (POST/PATCH/DELETE) en réponse à un 5xx, où le rejeu
+ * créerait un doublon plutôt qu'un secours (cf. failover-policy.ts).
  *
  * Pas de sonde `/health` séparée avant la vraie requête : ça doublait le
  * nombre d'aller-retours réseau (Worker -> tunnel -> TrueNAS deux fois de
@@ -23,6 +25,8 @@
  * prévoir la séparation des dossiers".
  */
 
+import { shouldReplay, type FailureKind } from "./failover-policy";
+
 export interface Env {
   PRIMARY_API_URL: string;
   FALLBACK_API_URL: string;
@@ -34,6 +38,15 @@ function targetUrl(baseUrl: string, request: Request): string {
   return new URL(url.pathname + url.search, baseUrl).toString();
 }
 
+/** Porte la réponse 5xx du primaire : contrairement à un échec de
+ * transport, ce n'est pas rejouable sans discrimination (cf.
+ * failover-policy.ts) — on doit pouvoir la renvoyer telle quelle. */
+class PrimaryServerError extends Error {
+  constructor(public readonly response: Response) {
+    super(`Réponse ${response.status} du backend primaire`);
+  }
+}
+
 async function proxyWithTimeout(baseUrl: string, request: Request, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -43,7 +56,7 @@ async function proxyWithTimeout(baseUrl: string, request: Request, timeoutMs: nu
     // que `fetch(url, request)` plus bas, qui marchait déjà tel quel.
     const response = await fetch(targetUrl(baseUrl, request), new Request(request, { signal: controller.signal }));
     if (response.status >= 500) {
-      throw new Error(`Réponse ${response.status} du backend primaire`);
+      throw new PrimaryServerError(response);
     }
     return response;
   } finally {
@@ -53,6 +66,10 @@ async function proxyWithTimeout(baseUrl: string, request: Request, timeoutMs: nu
 
 async function proxy(baseUrl: string, request: Request): Promise<Response> {
   return fetch(targetUrl(baseUrl, request), request);
+}
+
+function describe(request: Request): string {
+  return `${request.method} ${new URL(request.url).pathname}`;
 }
 
 export default {
@@ -67,13 +84,35 @@ export default {
 
     try {
       return await proxyWithTimeout(env.PRIMARY_API_URL, request, timeoutMs);
-    } catch {
-      // primaire injoignable, trop lent, ou en erreur -> on tente le secours.
+    } catch (err) {
+      const kind: FailureKind = err instanceof PrimaryServerError ? "server-error" : "transport";
+
+      if (!shouldReplay(request.method, kind)) {
+        // Un 5xx sur une écriture : le primaire a probablement déjà traité
+        // la requête, on renvoie sa réponse telle quelle plutôt que de
+        // risquer un doublon sur le secours.
+        console.warn(`[failover] pas de rejeu (${kind}) pour ${describe(request)}`);
+        if (err instanceof PrimaryServerError) return err.response;
+        return new Response("Le backend primaire est indisponible.", { status: 503 });
+      }
+
+      console.warn(
+        `[failover] bascule vers le secours (${kind}) pour ${describe(request)} :`,
+        err instanceof Error ? err.message : err,
+      );
     }
 
     try {
-      return await proxy(env.FALLBACK_API_URL, fallbackRequest);
-    } catch {
+      const response = await proxy(env.FALLBACK_API_URL, fallbackRequest);
+      if (response.status >= 500) {
+        console.warn(`[failover] le secours répond ${response.status} pour ${describe(request)}`);
+      }
+      return response;
+    } catch (err) {
+      console.warn(
+        `[failover] secours injoignable pour ${describe(request)} :`,
+        err instanceof Error ? err.message : err,
+      );
       return new Response("Les deux instances backend sont indisponibles.", { status: 502 });
     }
   },

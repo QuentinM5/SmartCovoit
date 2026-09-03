@@ -17,5 +17,12 @@
     "PRIMARY_API_URL": "https://smartcovoitlocalapi.qmeyer.fr",
     "FALLBACK_API_URL": "https://smartcovoit-production.up.railway.app",
     "REQUEST_TIMEOUT_MS": "25000"
+  },
+
+  // Sans ça, les `console.warn` de bascule (cf. index.ts) ne vont nulle
+  // part : jusqu'ici une bascule était totalement invisible, impossible de
+  // savoir combien de fois ni pourquoi.
+  "observability": {
+    "enabled": true
   }
 }
