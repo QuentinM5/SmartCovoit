@@ -22,6 +22,7 @@ export default function HomePage() {
   const { user, loading } = useAuth();
   const [name, setName] = useState("");
   const [eventDate, setEventDate] = useState("");
+  const [description, setDescription] = useState("");
   const [depot, setDepot] = useState<AddressValue>({ address: "", lat: null, lon: null });
   const [addressAvailable, setAddressAvailable] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -58,21 +59,27 @@ export default function HomePage() {
       depot_lat: depot.lat ?? 0,
       depot_lon: depot.lon ?? 0,
       event_date: eventDate,
+      description: description.trim() || null,
       created_at: new Date().toISOString(),
       owner_id: user?.id ?? null,
       has_cover_image: false,
       drivers: [],
       passengers: [],
-      comments: [],
     });
     router.push(`/events/${id}`);
 
-    createEvent({ id, name, depot_address: depot.address, event_date: eventDate, lat: depot.lat, lon: depot.lon }).catch(
-      () => {
-        // Rien à faire côté ce composant, déjà en train de se démonter suite
-        // à router.push — la page de destination porte la gestion de l'échec.
-      },
-    );
+    createEvent({
+      id,
+      name,
+      depot_address: depot.address,
+      event_date: eventDate,
+      description: description.trim() || null,
+      lat: depot.lat,
+      lon: depot.lon,
+    }).catch(() => {
+      // Rien à faire côté ce composant, déjà en train de se démonter suite
+      // à router.push — la page de destination porte la gestion de l'échec.
+    });
   }
 
   return (
@@ -146,6 +153,20 @@ export default function HomePage() {
                 onChange={setDepot}
                 onAvailabilityChange={setAddressAvailable}
                 placeholder="Commence à taper une adresse…"
+              />
+            </Field>
+
+            <Field
+              label="Message pour le groupe"
+              hint="Visible sur la page, par exemple les consignes de rendez-vous. Facultatif."
+            >
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Ex. : on se retrouve devant l'entrée principale, prévoir des chaussures de marche…"
+                rows={3}
+                maxLength={2000}
+                className={`${inputClass} resize-y`}
               />
             </Field>
 

@@ -70,6 +70,9 @@ class Event(Base):
     depot_lat: Mapped[float] = mapped_column(Float)
     depot_lon: Mapped[float] = mapped_column(Float)
     event_date: Mapped[date_] = mapped_column(Date)
+    # Message libre de l'organisateur, saisi à la création (pas un fil de
+    # discussion ouvert aux inscrits) — consignes de rendez-vous, etc.
+    description: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     # Nul pour les événements créés avant l'authentification (migration
     # 0003) : aucun utilisateur réel n'existe pour ces anciennes lignes,
@@ -107,9 +110,6 @@ class Event(Base):
     )
     solutions: Mapped[list["SolutionRecord"]] = relationship(
         back_populates="event", cascade="all, delete-orphan", order_by="SolutionRecord.created_at"
-    )
-    comments: Mapped[list["Comment"]] = relationship(
-        back_populates="event", cascade="all, delete-orphan", order_by="Comment.created_at"
     )
 
 
@@ -152,31 +152,6 @@ class Passenger(Base):
     )
 
     event: Mapped["Event"] = relationship(back_populates="passengers")
-
-
-class Comment(Base):
-    __tablename__ = "comments"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
-    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
-    # Pas de texte libre non vérifié comme pour Driver/Passenger à l'origine
-    # : commenter exige désormais un compte, donc l'auteur est une vraie
-    # référence plutôt qu'un nom déclaré. `CASCADE` (pas `SET NULL`) : un
-    # commentaire sans auteur connu n'a pas de sens à garder.
-    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    body: Mapped[str] = mapped_column(String(2000))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-    event: Mapped["Event"] = relationship(back_populates="comments")
-    author: Mapped["User"] = relationship()
-
-    @property
-    def author_name(self) -> str:
-        # Lu par CommentOut (from_attributes=True) — suppose `author` déjà
-        # chargé par un selectinload (cf. _load_event_with_participants dans
-        # routes.py) : accéder à une relation non chargée planterait en
-        # contexte async plutôt que de faire un aller-retour SQL implicite.
-        return self.author.name
 
 
 class SolutionRecord(Base):

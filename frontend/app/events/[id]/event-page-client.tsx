@@ -3,14 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Car, ImagePlus, MessageCircle, Route as RouteIcon, User } from "lucide-react";
+import { Car, ImagePlus, Route as RouteIcon, User } from "lucide-react";
 import {
   ApiError,
-  addComment,
   addDriver,
   addPassenger,
   coverImageUrl,
-  deleteComment,
   deleteDriver,
   deletePassenger,
   getEvent,
@@ -18,7 +16,6 @@ import {
   moveStop,
   solveEvent,
   uploadCoverImage,
-  type Comment,
   type Direction,
   type Driver,
   type EventDetail,
@@ -31,6 +28,7 @@ import { DirectionCheckboxes, DirectionGlyph, DirectionPicker } from "@/componen
 import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { DeleteButton } from "@/components/delete-button";
+import { LocationMap } from "@/components/location-map";
 import { RouteLine } from "@/components/route-line";
 import { RouteMap, type MapRoute } from "@/components/route-map";
 import { SolvingProgress } from "@/components/solving-progress";
@@ -348,53 +346,6 @@ export function EventPageClient({ id }: { id: string }) {
     }
   }
 
-  const [commentError, setCommentError] = useState<string | null>(null);
-
-  /** Optimiste comme le reste de la page : le commentaire apparaît tout de
-   * suite avec un id provisoire, remplacé par la version serveur (ou
-   * retiré en cas d'échec). */
-  async function handleAddComment(body: string): Promise<void> {
-    if (!user) return;
-    setCommentError(null);
-    const tempId = `optimistic-${crypto.randomUUID()}`;
-    const optimistic: Comment = {
-      id: tempId,
-      author_id: user.id,
-      author_name: user.name,
-      body,
-      created_at: new Date().toISOString(),
-    };
-    setEvent((current) => (current ? { ...current, comments: [...current.comments, optimistic] } : current));
-
-    try {
-      const saved = await addComment(id, body);
-      setEvent((current) =>
-        current ? { ...current, comments: current.comments.map((c) => (c.id === tempId ? saved : c)) } : current,
-      );
-    } catch (err) {
-      setEvent((current) =>
-        current ? { ...current, comments: current.comments.filter((c) => c.id !== tempId) } : current,
-      );
-      setCommentError(networkMessage(err, "Le commentaire n'a pas été envoyé. Réessaie."));
-    }
-  }
-
-  async function handleRemoveComment(commentId: string) {
-    setCommentError(null);
-    const removed = event?.comments.find((c) => c.id === commentId);
-    setEvent((current) =>
-      current ? { ...current, comments: current.comments.filter((c) => c.id !== commentId) } : current,
-    );
-    try {
-      await deleteComment(id, commentId);
-    } catch (err) {
-      if (removed) {
-        setEvent((current) => (current ? { ...current, comments: [...current.comments, removed] } : current));
-      }
-      setCommentError(networkMessage(err, "La suppression n'a pas abouti. Réessaie."));
-    }
-  }
-
   const [coverImageError, setCoverImageError] = useState<string | null>(null);
   const [uploadingCoverImage, setUploadingCoverImage] = useState(false);
 
@@ -465,39 +416,59 @@ export function EventPageClient({ id }: { id: string }) {
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-8 sm:py-12">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
           <section>
-            {event.has_cover_image && (
-              // eslint-disable-next-line @next/next/no-img-element -- servie par le backend, pas next/image (cas d'usage trop ponctuel pour justifier l'optimisation).
-              <img
-                src={coverImageUrl(event.id)}
-                alt=""
-                className="mb-4 h-40 w-full rounded-lg border border-line object-cover sm:h-56"
-              />
-            )}
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <DirectionGlyph
-                  direction={viewDirection}
-                  className={`mt-1 h-10 w-14 shrink-0 ${dispersion ? "text-outbound" : "text-inbound"}`}
+            <div className="flex flex-wrap items-start gap-4">
+              {/* Deux vignettes au format proche d'une photo standard (4:3),
+                  pas la bannière large utilisée dans une version précédente
+                  — l'image (si présente) et le point de rendez-vous, côte à
+                  côte : la carte des trajets complète (RouteMap) vient plus
+                  bas, une fois un calcul fait. */}
+              <div className="flex shrink-0 gap-2">
+                {event.has_cover_image && (
+                  // eslint-disable-next-line @next/next/no-img-element -- servie par le backend, pas next/image (cas d'usage trop ponctuel pour justifier l'optimisation).
+                  <img
+                    src={coverImageUrl(event.id)}
+                    alt=""
+                    className="aspect-[4/3] w-28 rounded-lg border border-line object-cover sm:w-36"
+                  />
+                )}
+                <LocationMap
+                  lat={event.depot_lat}
+                  lon={event.depot_lon}
+                  className="aspect-[4/3] w-28 rounded-lg border border-line sm:w-36"
                 />
-                <div className="min-w-0">
-                  <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
-                  <p className="mt-1 text-sm text-muted capitalize">{formatEventDate(event.event_date)}</p>
-                  <p className="mt-0.5 text-sm text-muted">
-                    {dispersion ? "Retour depuis" : "Aller vers"}{" "}
-                    <span className="text-ink">{event.depot_address}</span>
-                  </p>
-                </div>
               </div>
-              <CopyLinkButton className="mt-1" />
+
+              <div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <DirectionGlyph
+                    direction={viewDirection}
+                    className={`mt-1 h-10 w-14 shrink-0 ${dispersion ? "text-outbound" : "text-inbound"}`}
+                  />
+                  <div className="min-w-0">
+                    <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
+                    <p className="mt-1 text-sm text-muted capitalize">{formatEventDate(event.event_date)}</p>
+                    <p className="mt-0.5 text-sm text-muted">
+                      {dispersion ? "Retour depuis" : "Aller vers"}{" "}
+                      <span className="text-ink">{event.depot_address}</span>
+                    </p>
+                  </div>
+                </div>
+                <CopyLinkButton className="mt-1" />
+              </div>
             </div>
+
+            {event.description && (
+              <p className="mt-4 whitespace-pre-wrap text-sm text-muted">{event.description}</p>
+            )}
+
             {canManage && (
               <label className="mt-3 inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink">
                 <ImagePlus className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                 {uploadingCoverImage
                   ? "Envoi…"
                   : event.has_cover_image
-                    ? "Changer l'image de couverture"
-                    : "Ajouter une image de couverture"}
+                    ? "Changer l'image"
+                    : "Ajouter une image"}
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
@@ -628,16 +599,6 @@ export function EventPageClient({ id }: { id: string }) {
           )}
         </section>
 
-        <CommentsSection
-          comments={event.comments}
-          canPost={!!user}
-          onAdd={handleAddComment}
-          onRemove={handleRemoveComment}
-          canRemoveAny={canManage}
-          currentUserId={user?.id ?? null}
-          error={commentError}
-        />
-
         {solution && event && (
           <section className="flex flex-col gap-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -764,93 +725,6 @@ function LoginPrompt({ message }: { message: string }) {
         </Link>
       </div>
     </div>
-  );
-}
-
-function CommentsSection({
-  comments,
-  canPost,
-  canRemoveAny,
-  currentUserId,
-  onAdd,
-  onRemove,
-  error,
-}: {
-  comments: Comment[];
-  canPost: boolean;
-  /** L'organisateur peut retirer n'importe quel commentaire, pas seulement
-   * les siens — même règle que pour les inscriptions. */
-  canRemoveAny: boolean;
-  currentUserId: string | null;
-  onAdd: (body: string) => Promise<void>;
-  onRemove: (commentId: string) => void;
-  error: string | null;
-}) {
-  const [body, setBody] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!body.trim() || submitting) return;
-    setSubmitting(true);
-    const toSend = body.trim();
-    setBody("");
-    try {
-      await onAdd(toSend);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <section className="flex flex-col gap-4">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-        <MessageCircle className="size-4" strokeWidth={1.75} aria-hidden="true" />
-        Commentaires
-        {comments.length > 0 && <span className="tabular text-muted">· {comments.length}</span>}
-      </h2>
-
-      {comments.length > 0 && (
-        <ul className="flex flex-col gap-3">
-          {comments.map((c) => (
-            <li key={c.id} className="rounded-md border border-line px-3 py-2.5 text-sm">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="font-medium">{c.author_name}</span>
-                {(canRemoveAny || c.author_id === currentUserId) && (
-                  <button
-                    type="button"
-                    onClick={() => onRemove(c.id)}
-                    className="text-xs text-muted underline-offset-2 transition hover:text-danger hover:underline"
-                  >
-                    Supprimer
-                  </button>
-                )}
-              </div>
-              <p className="mt-1 whitespace-pre-wrap text-muted">{c.body}</p>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {canPost && (
-        <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Ajouter un commentaire…"
-            rows={2}
-            className={`${inputClass} resize-y`}
-          />
-          <div>
-            <Button type="submit" variant="quiet" disabled={!body.trim() || submitting}>
-              {submitting ? "Envoi…" : "Commenter"}
-            </Button>
-          </div>
-        </form>
-      )}
-
-      {error && <ErrorNote>{error}</ErrorNote>}
-    </section>
   );
 }
 

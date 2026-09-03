@@ -28,7 +28,7 @@ from app.core.security import (
     verify_google_id_token,
     verify_password,
 )
-from app.db.models import Comment, Driver, Event, Passenger, SolutionRecord, User
+from app.db.models import Driver, Event, Passenger, SolutionRecord, User
 from app.distance.fallback import FallbackMatrixProvider
 from app.distance.types import Coord
 from app.geocoding.nominatim import NominatimClient
@@ -172,6 +172,7 @@ async def create_event(
         depot_lat=lat,
         depot_lon=lon,
         event_date=body.event_date,
+        description=body.description,
         owner_id=current_user.id,
     )
     db.add(event)
@@ -183,51 +184,6 @@ async def create_event(
 @router.get("/events/{event_id}", response_model=schemas.EventDetailOut)
 async def get_event(event_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Event:
     return await _load_event_with_participants(db, event_id)
-
-
-@router.post("/events/{event_id}/comments", response_model=schemas.CommentOut, status_code=201)
-async def add_comment(
-    event_id: uuid.UUID,
-    body: schemas.CommentCreate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> schemas.CommentOut:
-    await _get_event_or_404(db, event_id)
-    comment = Comment(event_id=event_id, author_id=current_user.id, body=body.body)
-    db.add(comment)
-    await db.commit()
-    await db.refresh(comment)
-    # Construit à la main plutôt que via from_attributes=True sur `comment`
-    # directement : `author_name` lit `comment.author`, une relation qui
-    # n'a pas besoin d'être rechargée puisqu'on connaît déjà le nom
-    # (`current_user`) sans aller-retour SQL supplémentaire.
-    return schemas.CommentOut(
-        id=comment.id,
-        author_id=current_user.id,
-        author_name=current_user.name,
-        body=comment.body,
-        created_at=comment.created_at,
-    )
-
-
-@router.delete("/events/{event_id}/comments/{comment_id}", status_code=204, response_class=Response)
-async def remove_comment(
-    event_id: uuid.UUID,
-    comment_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    stmt = select(Comment).where(Comment.id == comment_id, Comment.event_id == event_id)
-    result = await db.execute(stmt)
-    comment = result.scalar_one_or_none()
-    if comment is None:
-        raise HTTPException(status_code=404, detail="Commentaire introuvable pour cet événement.")
-    if comment.author_id != current_user.id:
-        event = await _get_event_or_404(db, event_id)
-        _check_owner_or_open(event, current_user)
-    await db.delete(comment)
-    await db.commit()
-    return Response(status_code=204)
 
 
 @router.post("/events/{event_id}/cover-image", status_code=204, response_class=Response)
@@ -667,10 +623,6 @@ async def _load_event_with_participants(db: AsyncSession, event_id: uuid.UUID) -
         .options(
             selectinload(Event.drivers),
             selectinload(Event.passengers),
-            # .author chargé avec : Comment.author_name (lu par CommentOut)
-            # y accède directement, une relation non chargée planterait en
-            # contexte async plutôt que de faire un aller-retour SQL implicite.
-            selectinload(Event.comments).selectinload(Comment.author),
         )
         .where(Event.id == event_id)
     )

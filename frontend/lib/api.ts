@@ -22,14 +22,6 @@ export interface AuthResult {
   user: User;
 }
 
-export interface Comment {
-  id: string;
-  author_id: string;
-  author_name: string;
-  body: string;
-  created_at: string;
-}
-
 export interface EventOut {
   id: string;
   name: string;
@@ -37,6 +29,9 @@ export interface EventOut {
   depot_lat: number;
   depot_lon: number;
   event_date: string;
+  /** Message libre de l'organisateur, saisi à la création — pas un fil de
+   * discussion ouvert aux inscrits. */
+  description: string | null;
   created_at: string;
   /** Nul pour les événements créés avant l'authentification. */
   owner_id: string | null;
@@ -65,7 +60,6 @@ export interface Passenger {
 export interface EventDetail extends EventOut {
   drivers: Driver[];
   passengers: Passenger[];
-  comments: Comment[];
 }
 
 export interface Stop {
@@ -165,7 +159,13 @@ export interface AddressFields {
 }
 
 export function createEvent(
-  data: { name: string; depot_address: string; event_date: string; id?: string } & AddressFields,
+  data: {
+    name: string;
+    depot_address: string;
+    event_date: string;
+    description?: string | null;
+    id?: string;
+  } & AddressFields,
 ) {
   return request<EventOut>("/events", { method: "POST", body: JSON.stringify(data) });
 }
@@ -236,14 +236,6 @@ export function loginWithGoogle(idToken: string) {
 
 export function getCurrentUser() {
   return request<User>("/auth/me");
-}
-
-export function addComment(eventId: string, body: string) {
-  return request<Comment>(`/events/${eventId}/comments`, { method: "POST", body: JSON.stringify({ body }) });
-}
-
-export function deleteComment(eventId: string, commentId: string) {
-  return request<void>(`/events/${eventId}/comments/${commentId}`, { method: "DELETE" });
 }
 
 export function coverImageUrl(eventId: string): string {

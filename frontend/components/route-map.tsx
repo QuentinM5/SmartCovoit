@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadGoogleMaps } from "@/lib/google-maps";
+import { loadGoogleMaps, MAP_DARK_STYLE, MAP_LIGHT_STYLE } from "@/lib/google-maps";
 import type { ResolvedStop } from "@/lib/route";
 
 /**
@@ -21,26 +21,6 @@ export interface MapRoute {
   stops: ResolvedStop[];
   geometry?: number[][] | null;
 }
-
-// Fond épuré : les routes et libellés restent lisibles sans concurrencer les
-// tournées colorées posées par-dessus.
-const LIGHT_STYLE: google.maps.MapTypeStyle[] = [
-  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-  { featureType: "poi", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "road", elementType: "labels", stylers: [{ visibility: "simplified" }] },
-];
-
-const DARK_STYLE: google.maps.MapTypeStyle[] = [
-  ...LIGHT_STYLE,
-  { elementType: "geometry", stylers: [{ color: "#1b2027" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8b96a5" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#11151a" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a313b" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a434f" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1116" }] },
-  { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: "#171c23" }] },
-];
 
 function stopMarkerIcon(
   g: typeof google,
@@ -110,7 +90,7 @@ export function RouteMap({
           disableDefaultUI: true,
           zoomControl: true,
           gestureHandling: "cooperative",
-          styles: document.documentElement.classList.contains("dark") ? DARK_STYLE : LIGHT_STYLE,
+          styles: document.documentElement.classList.contains("dark") ? MAP_DARK_STYLE : MAP_LIGHT_STYLE,
         });
       })
       .catch((e: Error) => {
@@ -126,7 +106,7 @@ export function RouteMap({
   useEffect(() => {
     const observer = new MutationObserver(() => {
       mapRef.current?.setOptions({
-        styles: document.documentElement.classList.contains("dark") ? DARK_STYLE : LIGHT_STYLE,
+        styles: document.documentElement.classList.contains("dark") ? MAP_DARK_STYLE : MAP_LIGHT_STYLE,
       });
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });

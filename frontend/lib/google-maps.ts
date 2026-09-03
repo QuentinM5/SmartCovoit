@@ -8,6 +8,27 @@
 
 export const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
+// Fond épuré commun à toutes les cartes de l'appli (tournées, point de
+// rendez-vous) : les repères posés par-dessus restent lisibles sans
+// concurrencer le fond. Centralisé ici plutôt que dupliqué par composant.
+export const MAP_LIGHT_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "road", elementType: "labels", stylers: [{ visibility: "simplified" }] },
+];
+
+export const MAP_DARK_STYLE: google.maps.MapTypeStyle[] = [
+  ...MAP_LIGHT_STYLE,
+  { elementType: "geometry", stylers: [{ color: "#1b2027" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#8b96a5" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#11151a" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a313b" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a434f" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1116" }] },
+  { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: "#171c23" }] },
+];
+
 let loader: Promise<typeof google> | null = null;
 
 export function loadGoogleMaps(): Promise<typeof google> {

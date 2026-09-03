@@ -67,6 +67,9 @@ class EventCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     depot_address: str = Field(min_length=1, max_length=500)
     event_date: date_
+    # Message libre de l'organisateur, saisi à la création — pas un fil de
+    # discussion ouvert aux inscrits (cf. modèle `Event.description`).
+    description: str | None = Field(default=None, max_length=2000)
     # Optionnel : généré côté client pour naviguer vers /events/{id} sans
     # attendre la réponse de ce POST (cf. app/page.tsx) ; absent, le serveur
     # en génère un comme avant. Collision UUID v4 : risque nul en pratique,
@@ -83,6 +86,7 @@ class EventOut(BaseModel):
     depot_lat: float
     depot_lon: float
     event_date: date_
+    description: str | None
     created_at: datetime
     # Nul pour les événements créés avant l'authentification — cf. migration
     # 0003 et la matrice d'autorisation du plan.
@@ -129,22 +133,6 @@ class PassengerOut(BaseModel):
     direction: Direction
 
 
-class CommentCreate(BaseModel):
-    body: str = Field(min_length=1, max_length=2000)
-
-
-class CommentOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    author_id: uuid.UUID
-    # Nom affiché au moment de la lecture (celui du compte auteur), pas un
-    # texte libre saisi par le commentateur — cf. modèle `Comment.author`.
-    author_name: str
-    body: str
-    created_at: datetime
-
-
 class EventDetailOut(EventOut):
     """Extension au-delà des endpoints minimaux du brief : nécessaire pour
     qu'une page événement affiche l'état courant (conducteurs/passagers déjà
@@ -153,7 +141,6 @@ class EventDetailOut(EventOut):
 
     drivers: list[DriverOut]
     passengers: list[PassengerOut]
-    comments: list[CommentOut]
 
 
 class StopOut(BaseModel):
