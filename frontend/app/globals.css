@@ -21,6 +21,10 @@
      --color-outbound, qui est le vermillon du sens "dispersion" et ne doit
      porter que cette seule signification (une couleur, un sens). */
   --color-danger: #dc2626;
+  /* Ambre : signale un état à surveiller sans qu'il s'agisse d'une erreur
+     (ex. tournées modifiées manuellement, plus optimales) — distinct de
+     --color-danger, qui reste réservé aux échecs et suppressions. */
+  --color-warning: #b45309;
 
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
@@ -36,6 +40,7 @@
   --color-inbound: #7b8cff;
   --color-outbound: #ff8a3d;
   --color-danger: #ff5c5c;
+  --color-warning: #f0a93f;
 }
 
 @layer base {

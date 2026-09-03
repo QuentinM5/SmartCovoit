@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { ExternalLink, GripVertical } from "lucide-react";
 import { ROUTE_COLORS } from "@/components/route-map";
-import { formatEuros } from "@/lib/cost";
+import { formatMoney } from "@/lib/cost";
 import type { DragInfo, DragStartParams } from "@/lib/use-passenger-drag";
 import {
   formatDistance,
@@ -30,7 +30,8 @@ export function RouteLine({
   seats,
   distanceM,
   durationS,
-  costEuros,
+  cost,
+  currency,
   stops,
   index,
   onHoverChange,
@@ -48,7 +49,10 @@ export function RouteLine({
   durationS?: number | null;
   /** Coût estimé de cette tournée (barème de l'événement) — absent si aucun
    * partage de frais n'est configuré. */
-  costEuros?: number | null;
+  cost?: number | null;
+  /** Devise du partage de frais de l'événement — nulle = EUR par défaut,
+   * cf. lib/cost.ts DEFAULT_CURRENCY. */
+  currency?: string | null;
   stops: ResolvedStop[];
   index: number;
   onHoverChange?: (active: boolean) => void;
@@ -117,10 +121,10 @@ export function RouteLine({
             {passengerCount} / {seats} {seats > 1 ? "places" : "place"}
           </span>
           {overCapacity && <span className="text-danger"> · surcapacité</span>}
-          {costEuros != null && (
+          {cost != null && (
             <>
               <span aria-hidden="true"> · </span>
-              <span className="font-mono">{formatEuros(costEuros)}</span>
+              <span className="font-mono">{formatMoney(cost, currency ?? null)}</span>
             </>
           )}
         </p>
@@ -131,10 +135,18 @@ export function RouteLine({
           <span className="flex-1">
             Cette voiture est complète ({passengerCount}/{seats}). Déposer quand même ?
           </span>
-          <button type="button" onClick={onConfirmOvercapacity} className="font-medium underline underline-offset-2">
+          <button
+            type="button"
+            onClick={onConfirmOvercapacity}
+            className="cursor-pointer font-medium underline underline-offset-2"
+          >
             Confirmer
           </button>
-          <button type="button" onClick={onCancelOvercapacity} className="text-muted underline underline-offset-2">
+          <button
+            type="button"
+            onClick={onCancelOvercapacity}
+            className="cursor-pointer text-muted underline underline-offset-2"
+          >
             Annuler
           </button>
         </div>

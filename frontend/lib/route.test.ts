@@ -21,6 +21,7 @@ function baseEvent(overrides: Partial<EventDetail> = {}): EventDetail {
     has_cover_image: false,
     fuel_price_per_l: null,
     consumption_l_per_100km: null,
+    currency: null,
     drivers: [],
     passengers: [],
     ...overrides,
@@ -43,7 +44,7 @@ describe("resolveStops", () => {
 
   it("résout un arrêt passager en cherchant le passager par id", () => {
     const event = baseEvent({
-      passengers: [{ id: "p1", name: "Bob", address: "2 rue B", lat: 1, lon: 2, direction: "ramassage" }],
+      passengers: [{ id: "p1", name: "Bob", address: "2 rue B", lat: 1, lon: 2, direction: "ramassage", user_id: null }],
     });
     const route: Route = {
       driver_id: "d1",
@@ -69,7 +70,16 @@ describe("resolveStops", () => {
   });
 
   it("libelle différemment le domicile du conducteur selon le sens", () => {
-    const driver = { id: "d1", name: "Chloé", seats: 3, address: "3 rue C", lat: 1, lon: 2, direction: "dispersion" as const };
+    const driver = {
+      id: "d1",
+      name: "Chloé",
+      seats: 3,
+      address: "3 rue C",
+      lat: 1,
+      lon: 2,
+      direction: "dispersion" as const,
+      user_id: null,
+    };
     const event = baseEvent({ drivers: [driver] });
     const route: Route = {
       driver_id: "d1",

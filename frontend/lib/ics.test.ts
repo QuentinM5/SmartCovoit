@@ -16,6 +16,7 @@ function baseEvent(overrides: Partial<EventDetail> = {}): EventDetail {
     has_cover_image: false,
     fuel_price_per_l: null,
     consumption_l_per_100km: null,
+    currency: null,
     drivers: [],
     passengers: [],
     ...overrides,

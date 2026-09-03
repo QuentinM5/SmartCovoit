@@ -31,7 +31,7 @@ export function Header({ back = false }: { back?: boolean }) {
                 <button
                   type="button"
                   onClick={logout}
-                  className="text-muted underline-offset-2 transition hover:text-ink hover:underline"
+                  className="cursor-pointer text-muted underline-offset-2 transition hover:text-ink hover:underline"
                 >
                   Se déconnecter
                 </button>

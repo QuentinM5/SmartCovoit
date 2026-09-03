@@ -6,12 +6,15 @@ import {
   ApiError,
   addDriver,
   addPassenger,
+  deleteCoverImage,
   deleteDriver,
   deletePassenger,
   getEvent,
   getSolution,
   moveStop,
   solveEvent,
+  updateDriver,
+  updatePassenger,
   uploadCoverImage,
   type Direction,
   type Driver,
@@ -28,7 +31,7 @@ import { resolveStops } from "@/lib/route";
 import { usePassengerDrag, type DragInfo } from "@/lib/use-passenger-drag";
 import { SolvingProgress } from "@/components/solving-progress";
 import { EventHeader } from "./event-header";
-import { RosterSection } from "./roster-section";
+import { RosterSection, type ParticipantUpdate } from "./roster-section";
 import { RoutesSection } from "./routes-section";
 import { SignupSection } from "./signup-section";
 import { LoginPrompt } from "./event-notices";
@@ -63,6 +66,10 @@ export function EventPageClient({ id }: { id: string }) {
   const [pendingOvercapacity, setPendingOvercapacity] = useState<{ info: DragInfo; toDriverId: string } | null>(
     null,
   );
+  // Un glisser-déposer réussi rend la solution affichée différente de ce que
+  // le solveur a produit — signalé tant qu'aucun nouveau calcul complet n'a
+  // eu lieu (cf. RoutesSection, bandeau d'avertissement).
+  const [hasManualChanges, setHasManualChanges] = useState(false);
 
   useEffect(() => {
     if (!pendingOvercapacity) return;
@@ -115,6 +122,7 @@ export function EventPageClient({ id }: { id: string }) {
     setViewDirection(next);
     setSolution(null);
     setSolveError(null);
+    setHasManualChanges(false);
     getSolution(id, next)
       .then(setSolution)
       .catch((err) => {
@@ -194,6 +202,7 @@ export function EventPageClient({ id }: { id: string }) {
           lat: data.lat ?? 0,
           lon: data.lon ?? 0,
           direction,
+          user_id: user?.id ?? null,
         }));
         return { ...current, drivers: [...current.drivers, ...optimisticDrivers] };
       }
@@ -204,6 +213,7 @@ export function EventPageClient({ id }: { id: string }) {
         lat: data.lat ?? 0,
         lon: data.lon ?? 0,
         direction,
+        user_id: user?.id ?? null,
       }));
       return { ...current, passengers: [...current.passengers, ...optimisticPassengers] };
     });
@@ -256,6 +266,7 @@ export function EventPageClient({ id }: { id: string }) {
 
     try {
       setSolution(await moveStop(id, info.passengerId, toDriverId));
+      setHasManualChanges(true);
     } catch (err) {
       setSolution(previousSolution);
       setSolveError(networkMessage(err, "Le déplacement n'a pas abouti. Réessaie."));
@@ -302,6 +313,7 @@ export function EventPageClient({ id }: { id: string }) {
     setSolving(true);
     try {
       setSolution(await solveEvent(id, viewDirection));
+      setHasManualChanges(false);
     } catch (err) {
       setSolveError(networkMessage(err, "Le calcul n'a pas abouti. Réessaie dans un instant."));
     } finally {
@@ -311,6 +323,7 @@ export function EventPageClient({ id }: { id: string }) {
 
   const [coverImageError, setCoverImageError] = useState<string | null>(null);
   const [uploadingCoverImage, setUploadingCoverImage] = useState(false);
+  const [deletingCoverImage, setDeletingCoverImage] = useState(false);
 
   async function handleUploadCoverImage(file: File) {
     setCoverImageError(null);
@@ -322,6 +335,93 @@ export function EventPageClient({ id }: { id: string }) {
       setCoverImageError(networkMessage(err, "L'image n'a pas pu être envoyée. Réessaie."));
     } finally {
       setUploadingCoverImage(false);
+    }
+  }
+
+  async function handleDeleteCoverImage() {
+    setCoverImageError(null);
+    setDeletingCoverImage(true);
+    try {
+      await deleteCoverImage(id);
+      setEvent((current) => (current ? { ...current, has_cover_image: false } : current));
+    } catch (err) {
+      setCoverImageError(networkMessage(err, "L'image n'a pas pu être supprimée. Réessaie."));
+    } finally {
+      setDeletingCoverImage(false);
+    }
+  }
+
+  /**
+   * Même règle d'autorisation que côté serveur (`_can_remove_participant`) :
+   * la personne elle-même, une inscription orpheline, ou l'organisateur.
+   * Recalculée ici plutôt qu'exposée par l'API pour ne pas dupliquer un
+   * aller-retour réseau par ligne de la liste.
+   */
+  function canEditParticipant(participantUserId: string | null): boolean {
+    if (!user || !event) return false;
+    return (
+      participantUserId === user.id ||
+      participantUserId === null ||
+      event.owner_id === null ||
+      event.owner_id === user.id
+    );
+  }
+
+  /**
+   * Même patron optimiste que `handleRemove` : on applique tout de suite,
+   * on annule uniquement la ligne concernée en cas d'échec. `refresh()` en
+   * fin de succès récupère l'état canonique — nécessaire si l'adresse a
+   * changé, ce qui invalide la solution de ce sens côté serveur.
+   */
+  async function handleUpdateParticipant(kind: Role, participantId: string, data: ParticipantUpdate) {
+    setRosterError(null);
+    const previous =
+      kind === "driver"
+        ? event?.drivers.find((d) => d.id === participantId)
+        : event?.passengers.find((p) => p.id === participantId);
+
+    setEvent((current) => {
+      if (!current) return current;
+      return kind === "driver"
+        ? {
+            ...current,
+            drivers: current.drivers.map((d) =>
+              d.id === participantId
+                ? { ...d, name: data.name, seats: data.seats ?? d.seats, address: data.address }
+                : d,
+            ),
+          }
+        : {
+            ...current,
+            passengers: current.passengers.map((p) =>
+              p.id === participantId ? { ...p, name: data.name, address: data.address } : p,
+            ),
+          };
+    });
+
+    try {
+      if (kind === "driver") {
+        await updateDriver(id, participantId, { name: data.name, seats: data.seats, address: data.address, lat: data.lat, lon: data.lon });
+      } else {
+        await updatePassenger(id, participantId, { name: data.name, address: data.address, lat: data.lat, lon: data.lon });
+      }
+      await refresh();
+    } catch (err) {
+      if (previous) {
+        setEvent((current) => {
+          if (!current) return current;
+          return kind === "driver"
+            ? { ...current, drivers: current.drivers.map((d) => (d.id === participantId ? (previous as Driver) : d)) }
+            : {
+                ...current,
+                passengers: current.passengers.map((p) =>
+                  p.id === participantId ? (previous as Passenger) : p,
+                ),
+              };
+        });
+      }
+      setRosterError(networkMessage(err, "La modification n'a pas abouti. Réessaie."));
+      throw err;
     }
   }
 
@@ -382,8 +482,10 @@ export function EventPageClient({ id }: { id: string }) {
             viewDirection={viewDirection}
             canManage={canManage}
             uploadingCoverImage={uploadingCoverImage}
+            deletingCoverImage={deletingCoverImage}
             coverImageError={coverImageError}
             onUploadCoverImage={handleUploadCoverImage}
+            onDeleteCoverImage={handleDeleteCoverImage}
           />
 
           {authLoading ? null : user ? (
@@ -400,7 +502,9 @@ export function EventPageClient({ id }: { id: string }) {
           passengers={viewPassengers}
           seatsLeft={seatsLeft}
           error={rosterError}
+          canEdit={canEditParticipant}
           onRemove={handleRemove}
+          onUpdate={handleUpdateParticipant}
         />
 
         <section className="flex flex-col gap-4">
@@ -409,16 +513,12 @@ export function EventPageClient({ id }: { id: string }) {
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <Button onClick={handleSolve} disabled={solving || viewDrivers.length === 0 || !canManage}>
+                <Button onClick={handleSolve} disabled={solving || viewDrivers.length === 0}>
                   <RouteIcon className="size-4" strokeWidth={1.75} aria-hidden="true" />
                   {solving ? "Calcul…" : solution ? "Recalculer les trajets" : "Calculer les trajets"}
                 </Button>
-                {!canManage ? (
-                  <p className="text-sm text-muted">Seul l&apos;organisateur peut calculer les trajets.</p>
-                ) : (
-                  viewDrivers.length === 0 && (
-                    <p className="text-sm text-muted">Il faut au moins un conducteur inscrit sur ce trajet.</p>
-                  )
+                {viewDrivers.length === 0 && (
+                  <p className="text-sm text-muted">Il faut au moins un conducteur inscrit sur ce trajet.</p>
                 )}
               </div>
 
@@ -442,6 +542,7 @@ export function EventPageClient({ id }: { id: string }) {
             onHoverChange={setHighlighted}
             canManage={canManage}
             onPassengerDragStart={startDrag}
+            hasManualChanges={hasManualChanges}
             hoveredDriverId={hoveredDriverId}
             draggingPassengerId={drag?.passengerId ?? null}
             pendingOvercapacityDriverId={pendingOvercapacity?.toDriverId ?? null}

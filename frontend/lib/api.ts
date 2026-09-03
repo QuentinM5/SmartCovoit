@@ -41,6 +41,9 @@ export interface EventOut {
    * serveur (cf. lib/cost.ts), pas 0. */
   fuel_price_per_l: number | null;
   consumption_l_per_100km: number | null;
+  /** Devise du partage de frais. Nulle = jamais choisie par l'organisateur —
+   * appliquer alors EUR par défaut (cf. lib/cost.ts DEFAULT_CURRENCY). */
+  currency: string | null;
 }
 
 /** Un événement listé par GET /events, avec le statut du compte connecté
@@ -58,6 +61,9 @@ export interface Driver {
   lat: number;
   lon: number;
   direction: Direction;
+  /** Nul pour les inscriptions faites avant l'authentification — sert à
+   * décider qui peut modifier cette ligne (cf. roster-section.tsx). */
+  user_id: string | null;
 }
 
 export interface Passenger {
@@ -67,6 +73,7 @@ export interface Passenger {
   lat: number;
   lon: number;
   direction: Direction;
+  user_id: string | null;
 }
 
 export interface EventDetail extends EventOut {
@@ -204,9 +211,14 @@ export function updateEvent(
     description?: string | null;
     fuel_price_per_l?: number | null;
     consumption_l_per_100km?: number | null;
+    currency?: string | null;
   } & AddressFields,
 ) {
   return request<EventOut>(`/events/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export function deleteEvent(id: string) {
+  return request<void>(`/events/${id}`, { method: "DELETE" });
 }
 
 export function addDriver(
@@ -224,6 +236,25 @@ export function addPassenger(
   data: { id?: string; name: string; address: string; direction: Direction } & AddressFields,
 ) {
   return request<Passenger>(`/events/${eventId}/passengers`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateDriver(
+  eventId: string,
+  driverId: string,
+  data: { name?: string; seats?: number; address?: string } & AddressFields,
+) {
+  return request<Driver>(`/events/${eventId}/drivers/${driverId}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export function updatePassenger(
+  eventId: string,
+  passengerId: string,
+  data: { name?: string; address?: string } & AddressFields,
+) {
+  return request<Passenger>(`/events/${eventId}/passengers/${passengerId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
 }
 
 export function deleteDriver(eventId: string, driverId: string) {
@@ -284,4 +315,8 @@ export function uploadCoverImage(eventId: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);
   return requestUpload<void>(`/events/${eventId}/cover-image`, formData);
+}
+
+export function deleteCoverImage(eventId: string) {
+  return request<void>(`/events/${eventId}/cover-image`, { method: "DELETE" });
 }

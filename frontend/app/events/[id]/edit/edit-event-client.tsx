@@ -3,9 +3,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
-import { ApiError, getEvent, updateEvent, type EventDetail } from "@/lib/api";
+import { ApiError, deleteEvent, getEvent, updateEvent, type EventDetail } from "@/lib/api";
 import { EventForm, type EventFormValues } from "@/components/event-form";
-import { DEFAULT_CONSUMPTION_L_PER_100KM, DEFAULT_FUEL_PRICE_PER_L } from "@/lib/cost";
+import { CURRENCIES, DEFAULT_CONSUMPTION_L_PER_100KM, DEFAULT_CURRENCY, DEFAULT_FUEL_PRICE_PER_L } from "@/lib/cost";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
 import { networkMessage } from "@/lib/event-format";
 import { LoginPrompt } from "../event-notices";
@@ -103,9 +103,79 @@ export function EditEventClient({ id }: { id: string }) {
           />
 
           <CostSettingsForm eventId={id} event={event} />
+
+          <DangerZone eventId={id} eventName={event.name} />
         </div>
       </main>
     </>
+  );
+}
+
+/**
+ * Suppression de l'événement — irréversible pour tout le groupe (inscrits,
+ * tournées calculées), donc une confirmation plus stricte que le `DeleteButton`
+ * habituel : retaper le nom, pas juste cliquer une deuxième fois.
+ */
+function DangerZone({ eventId, eventName }: { eventId: string; eventName: string }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteEvent(eventId);
+      router.replace("/events");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "La suppression n'a pas abouti. Réessaie.");
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-danger/40 p-4 sm:p-5">
+      <div>
+        <h2 className="text-sm font-semibold tracking-tight text-danger">Supprimer l&apos;événement</h2>
+        <p className="mt-1 text-xs text-muted">
+          Efface définitivement les inscriptions et les trajets calculés. Aucun retour en arrière possible.
+        </p>
+      </div>
+
+      {confirming ? (
+        <div className="flex flex-col gap-2">
+          <Field label={`Retape « ${eventName} » pour confirmer`}>
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} className={inputClass} />
+          </Field>
+          {error && <ErrorNote>{error}</ErrorNote>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={typed !== eventName || deleting}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-danger px-4 py-2 text-sm font-medium text-paper transition hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {deleting ? "Suppression…" : "Supprimer définitivement"}
+            </button>
+            <Button type="button" variant="quiet" onClick={() => setConfirming(false)}>
+              Annuler
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-danger/40 bg-surface px-4 py-2 text-sm font-medium text-danger transition hover:border-danger"
+          >
+            Supprimer l&apos;événement
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -120,6 +190,7 @@ function CostSettingsForm({ eventId, event }: { eventId: string; event: EventDet
   const [consumption, setConsumption] = useState(
     String(event.consumption_l_per_100km ?? DEFAULT_CONSUMPTION_L_PER_100KM),
   );
+  const [currency, setCurrency] = useState(event.currency ?? DEFAULT_CURRENCY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -133,6 +204,7 @@ function CostSettingsForm({ eventId, event }: { eventId: string; event: EventDet
       await updateEvent(eventId, {
         fuel_price_per_l: Number(fuelPrice) || null,
         consumption_l_per_100km: Number(consumption) || null,
+        currency,
       });
       setSaved(true);
     } catch (err) {
@@ -155,8 +227,8 @@ function CostSettingsForm({ eventId, event }: { eventId: string; event: EventDet
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Prix du carburant" hint="€ par litre">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Prix du carburant" hint={`${currency} par litre`}>
           <input
             type="number"
             inputMode="decimal"
@@ -177,6 +249,15 @@ function CostSettingsForm({ eventId, event }: { eventId: string; event: EventDet
             onChange={(e) => setConsumption(e.target.value)}
             className={`${inputClass} tabular font-mono`}
           />
+        </Field>
+        <Field label="Devise">
+          <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputClass}>
+            {CURRENCIES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
         </Field>
       </div>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { routeCostEuros, splitPerPersonEuros } from "@/lib/cost";
+import { formatMoney, routeCostEuros, splitPerPersonEuros } from "@/lib/cost";
 
 describe("routeCostEuros", () => {
   it("applique les valeurs par défaut quand le barème n'est pas personnalisé", () => {
@@ -26,5 +26,15 @@ describe("splitPerPersonEuros", () => {
 
   it("le conducteur seul paie tout", () => {
     expect(splitPerPersonEuros(10, 0)).toBe(10);
+  });
+});
+
+describe("formatMoney", () => {
+  it("applique EUR par défaut quand la devise n'est pas personnalisée", () => {
+    expect(formatMoney(10, null)).toBe((10).toLocaleString("fr-CA", { style: "currency", currency: "EUR" }));
+  });
+
+  it("respecte la devise choisie par l'organisateur", () => {
+    expect(formatMoney(10, "CHF")).toBe((10).toLocaleString("fr-CA", { style: "currency", currency: "CHF" }));
   });
 });

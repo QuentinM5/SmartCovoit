@@ -2,7 +2,7 @@
 
 import { RouteLine } from "@/components/route-line";
 import { RouteMap, type MapRoute } from "@/components/route-map";
-import { formatEuros, routeCostEuros } from "@/lib/cost";
+import { formatMoney, routeCostEuros } from "@/lib/cost";
 import { formatDistance, formatDuration } from "@/lib/route";
 import type { DragInfo, DragStartParams } from "@/lib/use-passenger-drag";
 import type { EventDetail, Solution } from "@/lib/api";
@@ -21,6 +21,7 @@ export function RoutesSection({
   pendingOvercapacityDriverId,
   onConfirmOvercapacity,
   onCancelOvercapacity,
+  hasManualChanges,
 }: {
   solution: Solution;
   event: EventDetail;
@@ -37,9 +38,12 @@ export function RoutesSection({
   pendingOvercapacityDriverId: string | null;
   onConfirmOvercapacity: () => void;
   onCancelOvercapacity: () => void;
+  /** Un glisser-déposer a été fait depuis le dernier calcul complet : les
+   * tournées affichées ne sont plus le résultat de l'optimisation. */
+  hasManualChanges: boolean;
 }) {
   const costParams = { fuelPricePerL: event.fuel_price_per_l, consumptionLPer100Km: event.consumption_l_per_100km };
-  const totalCostEuros = routeCostEuros(solution.total_distance_m, costParams);
+  const totalCost = routeCostEuros(solution.total_distance_m, costParams);
 
   return (
     <section className="flex flex-col gap-4">
@@ -57,11 +61,17 @@ export function RoutesSection({
             </>
           )}
           <span aria-hidden="true"> · </span>
-          <span className="font-mono">{formatEuros(totalCostEuros)}</span> de carburant estimé
+          <span className="font-mono">{formatMoney(totalCost, event.currency)}</span> de carburant estimé
         </p>
       </div>
 
       <SourceBanner source={solution.matrix_source} />
+
+      {hasManualChanges && (
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          Des modifications manuelles ont été faites depuis le dernier calcul — les trajets ne sont plus optimaux.
+        </p>
+      )}
 
       <RouteMap routes={mapRoutes} highlightedRoute={highlighted} />
 
@@ -77,7 +87,8 @@ export function RoutesSection({
               seats={driver?.seats ?? 0}
               distanceM={route.distance_m}
               durationS={route.duration_s}
-              costEuros={routeCostEuros(route.distance_m, costParams)}
+              cost={routeCostEuros(route.distance_m, costParams)}
+              currency={event.currency}
               stops={mapRoutes[index]?.stops ?? []}
               onHoverChange={(active) => onHoverChange(active ? index : null)}
               onPassengerDragStart={canManage ? onPassengerDragStart : undefined}

@@ -12,17 +12,17 @@ import { loadGoogleMaps, MAP_DARK_STYLE, MAP_LIGHT_STYLE } from "@/lib/google-ma
 
 export function LocationMap({ lat, lon, className }: { lat: number; lon: number; className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    let map: google.maps.Map | null = null;
 
     loadGoogleMaps()
       .then(async (g) => {
         await g.maps.importLibrary("maps");
         if (cancelled || !containerRef.current) return;
-        map = new g.maps.Map(containerRef.current, {
+        const map = new g.maps.Map(containerRef.current, {
           center: { lat, lng: lon },
           // Rapproché : un seul point à situer, pas un ensemble d'arrêts à
           // faire tenir dans le cadre comme pour RouteMap.
@@ -31,6 +31,7 @@ export function LocationMap({ lat, lon, className }: { lat: number; lon: number;
           gestureHandling: "cooperative",
           styles: document.documentElement.classList.contains("dark") ? MAP_DARK_STYLE : MAP_LIGHT_STYLE,
         });
+        mapRef.current = map;
         new g.maps.Marker({
           position: { lat, lng: lon },
           map,
@@ -54,6 +55,19 @@ export function LocationMap({ lat, lon, className }: { lat: number; lon: number;
       cancelled = true;
     };
   }, [lat, lon]);
+
+  // Le style suit la bascule de thème, qui pose/retire la classe sur <html>
+  // — sans quoi cette carte reste figée dans le thème actif au moment de sa
+  // création (contrairement à RouteMap, qui a déjà cet observateur).
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      mapRef.current?.setOptions({
+        styles: document.documentElement.classList.contains("dark") ? MAP_DARK_STYLE : MAP_LIGHT_STYLE,
+      });
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   if (error) {
     // Dégrade silencieusement en un simple repère visuel plutôt qu'un

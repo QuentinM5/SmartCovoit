@@ -31,6 +31,12 @@ export function splitPerPersonEuros(totalEuros: number, passengerCount: number):
   return totalEuros / (passengerCount + 1);
 }
 
-export function formatEuros(value: number): string {
-  return value.toLocaleString("fr-CA", { style: "currency", currency: "EUR" });
+/** Devise appliquée quand l'organisateur n'en a jamais choisi une (colonne
+ * `events.currency` nulle) — cf. schemas.Currency côté backend, même liste. */
+export const DEFAULT_CURRENCY = "EUR";
+export const CURRENCIES = ["EUR", "CAD", "USD", "CHF", "GBP"] as const;
+export type Currency = (typeof CURRENCIES)[number];
+
+export function formatMoney(value: number, currency: string | null): string {
+  return value.toLocaleString("fr-CA", { style: "currency", currency: currency ?? DEFAULT_CURRENCY });
 }
