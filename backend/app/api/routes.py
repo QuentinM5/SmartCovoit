@@ -339,6 +339,26 @@ async def update_event(
     return event
 
 
+@router.delete("/events/{event_id}", status_code=204, response_class=Response)
+async def delete_event(
+    event_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    event = await _get_event_or_404(db, event_id)
+    _check_owner_or_open(event, current_user)
+    # Journalisé avant la suppression : `events_log.event_id` passe à NULL en
+    # base (ON DELETE SET NULL, cf. models.py) une fois l'événement supprimé,
+    # donc l'id n'est plus rattachable après coup — on le garde dans `props`.
+    log_event(
+        db, "event_deleted", instance=settings.instance_name, user_id=current_user.id, event_id_str=str(event_id)
+    )
+    await db.delete(event)
+    await db.commit()
+    return Response(status_code=204)
+
+
 @router.post("/events/{event_id}/cover-image", status_code=204, response_class=Response)
 async def upload_cover_image(
     event_id: uuid.UUID,
@@ -358,6 +378,23 @@ async def upload_cover_image(
 
     event.cover_image = data
     event.cover_image_content_type = file.content_type
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/events/{event_id}/cover-image", status_code=204, response_class=Response)
+async def delete_cover_image(
+    event_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    event = await _get_event_or_404(db, event_id)
+    _check_owner_or_open(event, current_user)
+    # Les deux colonnes ensemble : `has_cover_image` (models.py) ne teste que
+    # `cover_image_content_type`, jamais différée — la laisser en place à
+    # elle seule ferait croire à une image toujours présente.
+    event.cover_image = None
+    event.cover_image_content_type = None
     await db.commit()
     return Response(status_code=204)
 
@@ -397,7 +434,9 @@ async def add_driver(
         existing = await db.get(Driver, body.id)
         if existing is not None and existing.event_id == event_id:
             return existing
-    if _participant_cap_reached(await _participant_count(db, event_id), settings.max_participants_per_event):
+    if _participant_cap_reached(
+        await _participant_count(db, event_id, body.direction), settings.max_participants_per_event
+    ):
         await log_event_now(db, "cap_reached", instance=settings.instance_name, event_id=event_id, role="driver")
         raise HTTPException(
             status_code=422,
@@ -451,7 +490,9 @@ async def add_passenger(
         existing = await db.get(Passenger, body.id)
         if existing is not None and existing.event_id == event_id:
             return existing
-    if _participant_cap_reached(await _participant_count(db, event_id), settings.max_participants_per_event):
+    if _participant_cap_reached(
+        await _participant_count(db, event_id, body.direction), settings.max_participants_per_event
+    ):
         await log_event_now(db, "cap_reached", instance=settings.instance_name, event_id=event_id, role="passenger")
         raise HTTPException(
             status_code=422,
@@ -484,6 +525,96 @@ async def add_passenger(
         if existing is not None:
             return existing
         raise
+    await db.refresh(passenger)
+    return passenger
+
+
+@router.patch("/events/{event_id}/drivers/{driver_id}", response_model=schemas.DriverOut)
+async def update_driver(
+    event_id: uuid.UUID,
+    driver_id: uuid.UUID,
+    body: schemas.DriverUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    geocoder: NominatimClient = Depends(get_geocoder),
+    settings: Settings = Depends(get_settings),
+) -> Driver:
+    driver = await _get_participant_or_404(db, Driver, event_id, driver_id)
+    event = await _get_event_or_404(db, event_id)
+    # Même règle que pour retirer une inscription : qui peut supprimer puis
+    # réinscrire peut tout aussi bien modifier sur place.
+    if not _can_remove_participant(event, driver.user_id, current_user):
+        raise HTTPException(status_code=403, detail="Tu ne peux modifier que ta propre inscription.")
+
+    updates = body.model_dump(exclude_unset=True, exclude={"lat", "lon"})
+    address_changed = "address" in updates
+    if address_changed:
+        if not updates["address"]:
+            raise HTTPException(status_code=422, detail="L'adresse ne peut pas être vide.")
+        lat, lon = await _locate_or_422(geocoder, body.address, body.coords)
+        updates["lat"] = lat
+        updates["lon"] = lon
+
+    for field, value in updates.items():
+        setattr(driver, field, value)
+
+    if address_changed:
+        # La tournée déjà calculée pour ce sens part de l'ancienne adresse —
+        # même geste que le changement de dépôt dans update_event.
+        await db.execute(
+            delete(SolutionRecord).where(
+                SolutionRecord.event_id == event_id, SolutionRecord.direction == driver.direction
+            )
+        )
+
+    log_event(
+        db, "participant_updated", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, role="driver",
+    )
+    await db.commit()
+    await db.refresh(driver)
+    return driver
+
+
+@router.patch("/events/{event_id}/passengers/{passenger_id}", response_model=schemas.PassengerOut)
+async def update_passenger(
+    event_id: uuid.UUID,
+    passenger_id: uuid.UUID,
+    body: schemas.PassengerUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    geocoder: NominatimClient = Depends(get_geocoder),
+    settings: Settings = Depends(get_settings),
+) -> Passenger:
+    passenger = await _get_participant_or_404(db, Passenger, event_id, passenger_id)
+    event = await _get_event_or_404(db, event_id)
+    if not _can_remove_participant(event, passenger.user_id, current_user):
+        raise HTTPException(status_code=403, detail="Tu ne peux modifier que ta propre inscription.")
+
+    updates = body.model_dump(exclude_unset=True, exclude={"lat", "lon"})
+    address_changed = "address" in updates
+    if address_changed:
+        if not updates["address"]:
+            raise HTTPException(status_code=422, detail="L'adresse ne peut pas être vide.")
+        lat, lon = await _locate_or_422(geocoder, body.address, body.coords)
+        updates["lat"] = lat
+        updates["lon"] = lon
+
+    for field, value in updates.items():
+        setattr(passenger, field, value)
+
+    if address_changed:
+        await db.execute(
+            delete(SolutionRecord).where(
+                SolutionRecord.event_id == event_id, SolutionRecord.direction == passenger.direction
+            )
+        )
+
+    log_event(
+        db, "participant_updated", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, role="passenger",
+    )
+    await db.commit()
     await db.refresh(passenger)
     return passenger
 
@@ -541,9 +672,11 @@ async def solve_event(
     solve_semaphore: anyio.Semaphore = Depends(get_solve_semaphore),
 ) -> schemas.SolutionOut:
     event = await _load_event_with_participants(db, event_id)
-    # Réservé à l'organisateur : c'est lui qui décide de (re)calculer les
-    # tournées, pas n'importe quel inscrit — cf. matrice d'autorisation du plan.
-    _check_owner_or_open(event, current_user)
+    # N'importe quel compte connecté peut lancer le calcul (pas réservé à
+    # l'organisateur) : c'est un calcul, pas une modification destructive,
+    # et attendre que l'organisateur s'en occupe freinait inutilement le
+    # groupe. Le cooldown et le plafond ci-dessous protègent déjà contre
+    # l'abus.
     drivers = [d for d in event.drivers if d.direction == direction]
     passengers = [p for p in event.passengers if p.direction == direction]
 
@@ -879,14 +1012,21 @@ async def move_stop(
     )
 
 
-async def _participant_count(db: AsyncSession, event_id: uuid.UUID) -> int:
-    """Conducteurs + passagers, tous sens confondus : c'est la taille qui
-    borne la matrice de /solve, pas le nombre par sens."""
+async def _participant_count(db: AsyncSession, event_id: uuid.UUID, direction: Direction) -> int:
+    """Conducteurs + passagers d'UN SEUL sens : c'est ce nombre (pas le total
+    aller+retour) qui borne la taille de la matrice de /solve, laquelle ne
+    mélange jamais les deux sens (cf. solve_event, qui filtre par direction).
+    Un événement avec 40 inscrits à l'aller et 40 au retour reste donc sous
+    le plafond côté /solve, alors que le total confondu l'aurait dépassé."""
     driver_count = await db.scalar(
-        select(func.count()).select_from(Driver).where(Driver.event_id == event_id)
+        select(func.count())
+        .select_from(Driver)
+        .where(Driver.event_id == event_id, Driver.direction == direction)
     )
     passenger_count = await db.scalar(
-        select(func.count()).select_from(Passenger).where(Passenger.event_id == event_id)
+        select(func.count())
+        .select_from(Passenger)
+        .where(Passenger.event_id == event_id, Passenger.direction == direction)
     )
     return (driver_count or 0) + (passenger_count or 0)
 

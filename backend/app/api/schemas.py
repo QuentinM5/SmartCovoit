@@ -5,10 +5,16 @@ from __future__ import annotations
 import uuid
 from datetime import date as date_
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.solver.model import Direction
+
+# Liste courte plutôt qu'un code ISO-4217 libre : moins de garde-fous à
+# écrire côté validation, et couvre les devises réellement attendues par les
+# utilisateurs actuels (Québec + Europe francophone).
+Currency = Literal["EUR", "CAD", "USD", "CHF", "GBP"]
 
 
 class SignupIn(BaseModel):
@@ -103,13 +109,17 @@ class EventOut(BaseModel):
     # avoir besoin de le résoudre côté serveur.
     fuel_price_per_l: float | None = None
     consumption_l_per_100km: float | None = None
+    # Devise du partage de frais. Nulle = jamais choisie par l'organisateur ;
+    # le client applique alors EUR (cf. lib/cost.ts DEFAULT_CURRENCY), même
+    # principe de défaut partagé que le barème ci-dessus.
+    currency: Currency | None = None
 
 
 class EventUpdate(Located):
     """Tous les champs optionnels : `model_dump(exclude_unset=True)` côté
     route distingue "absent du corps" (ne pas toucher) de "envoyé, y
     compris `null`" (remettre au défaut) — indispensable pour
-    fuel_price_per_l/consumption_l_per_100km."""
+    fuel_price_per_l/consumption_l_per_100km/currency."""
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     event_date: date_ | None = None
@@ -117,6 +127,7 @@ class EventUpdate(Located):
     depot_address: str | None = Field(default=None, min_length=1, max_length=500)
     fuel_price_per_l: float | None = Field(default=None, gt=0)
     consumption_l_per_100km: float | None = Field(default=None, gt=0)
+    currency: Currency | None = None
 
 
 class MyEventOut(EventOut):
@@ -149,6 +160,19 @@ class DriverOut(BaseModel):
     lat: float
     lon: float
     direction: Direction
+    # Nul pour les inscriptions faites avant l'authentification. Exposé pour
+    # que le frontend sache qui peut modifier cette ligne (cf.
+    # `_can_remove_participant`) sans avoir à deviner ou tenter un appel voué
+    # à échouer.
+    user_id: uuid.UUID | None = None
+
+
+class DriverUpdate(Located):
+    """Tous les champs optionnels, même patron qu'`EventUpdate`."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    seats: int | None = Field(default=None, gt=0, le=20)
+    address: str | None = Field(default=None, min_length=1, max_length=500)
 
 
 class PassengerCreate(Located):
@@ -168,6 +192,12 @@ class PassengerOut(BaseModel):
     lat: float
     lon: float
     direction: Direction
+    user_id: uuid.UUID | None = None
+
+
+class PassengerUpdate(Located):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    address: str | None = Field(default=None, min_length=1, max_length=500)
 
 
 class EventDetailOut(EventOut):

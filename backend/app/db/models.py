@@ -101,6 +101,11 @@ class Event(Base):
     # de Numeric.
     fuel_price_per_l: Mapped[float | None] = mapped_column(Float, nullable=True)
     consumption_l_per_100km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Devise du partage de frais, ajustable par l'organisateur. Nulle =
+    # jamais choisie -> le client applique EUR par défaut (cf. lib/cost.ts
+    # DEFAULT_CURRENCY), même principe de défaut partagé que les deux champs
+    # ci-dessus.
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
     @property
     def has_cover_image(self) -> bool:
