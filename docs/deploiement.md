@@ -141,6 +141,9 @@ sitemap, robots.txt) pointe sur ce domaine depuis le déploiement du
 | `NOMINATIM_USER_AGENT` | les deux | Nom d'app + contact réel (fait ✅) |
 | `CORS_ORIGINS` | les deux | URL(s) du frontend déployé, dont `https://smartcovoit.qmeyer.fr` (fait ✅) |
 | `GOOGLE_ROUTES_API_KEY` | les deux (optionnel) | Clé serveur Google Routes API, distincte de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — vide = pas de trafic temps réel, repli OSRM automatique |
+| `JWT_SECRET` | les deux, **obligatoire** | Valeur aléatoire (`python -c "import secrets; print(secrets.token_urlsafe(32))"`), différente sur chaque environnement, jamais commitée — le backend refuse de démarrer si absente |
+| `GOOGLE_OAUTH_CLIENT_ID` | les deux (optionnel) | Identifiant client OAuth Google (public, pas un secret) — vide = connexion Google désactivée côté backend. Créé dans Google Cloud Console (API Credentials > OAuth 2.0 Client ID > type "Web application"), avec les deux origines JavaScript autorisées (`https://smartcovoit.qmeyer.fr` et `https://smartcovoit-frontend.quentinmeyer57570.workers.dev`, cf. les deux origines frontend live) |
 | `PRIMARY_API_URL` | Worker répartiteur | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
 | `FALLBACK_API_URL` | Worker répartiteur | `https://smartcovoit-production.up.railway.app` (fait ✅) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `https://smartcovoit-worker.quentinmeyer57570.workers.dev` (fait ✅) |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Frontend | Même valeur que `GOOGLE_OAUTH_CLIENT_ID` — exposée au navigateur pour afficher le bouton Google, ce n'est pas un secret |

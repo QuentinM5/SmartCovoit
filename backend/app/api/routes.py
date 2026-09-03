@@ -12,16 +12,23 @@ import uuid
 from typing import TypeVar
 
 import anyio
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, undefer
 
 from app.api import schemas
-from app.api.deps import get_db, get_geocoder, get_matrix_provider
+from app.api.deps import get_current_user, get_db, get_geocoder, get_matrix_provider
 from app.core.config import Settings, get_settings
-from app.db.models import Driver, Event, Passenger, SolutionRecord
+from app.core.security import (
+    hash_password,
+    issue_session_token,
+    verify_google_id_token,
+    verify_password,
+)
+from app.db.models import Comment, Driver, Event, Passenger, SolutionRecord, User
 from app.distance.fallback import FallbackMatrixProvider
 from app.distance.types import Coord
 from app.geocoding.nominatim import NominatimClient
@@ -32,15 +39,127 @@ from app.solver.vrp import solve
 
 router = APIRouter()
 
+MAX_COVER_IMAGE_BYTES = 3 * 1024 * 1024
+ALLOWED_COVER_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+# Vérifié systématiquement même quand l'email n'existe pas ou n'a pas de mot
+# de passe (cf. login ci-dessous) : sans ça, l'absence de hachage bcrypt
+# (~100-300ms) rend la réponse mesurablement plus rapide pour un email
+# inconnu que pour un mot de passe simplement faux — une énumération de
+# comptes par le temps de réponse, pas par le contenu de l'erreur.
+_LOGIN_TIMING_GUARD_HASH = hash_password("smartcovoit-timing-guard-not-a-real-account")
+
 
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.post("/auth/signup", response_model=schemas.AuthOut, status_code=201)
+async def signup(
+    body: schemas.SignupIn,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> schemas.AuthOut:
+    existing = await db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Un compte existe déjà avec cet email.")
+
+    user = User(email=body.email, name=body.name, password_hash=hash_password(body.password))
+    db.add(user)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Deux inscriptions concurrentes avec le même email (double clic,
+        # deux onglets) : la contrainte unique protège la donnée, mais sans
+        # ce filet la deuxième requête plante en 500 au lieu du même 409
+        # propre que si la vérification ci-dessus l'avait détecté la première.
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Un compte existe déjà avec cet email.")
+    await db.refresh(user)
+    return schemas.AuthOut(
+        token=issue_session_token(user.id, settings.jwt_secret),
+        user=schemas.UserOut.model_validate(user),
+    )
+
+
+@router.post("/auth/login", response_model=schemas.AuthOut)
+async def login(
+    body: schemas.LoginIn,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> schemas.AuthOut:
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+    # Le hachage est vérifié dans tous les cas, y compris email inconnu ou
+    # compte sans mot de passe (contre `_LOGIN_TIMING_GUARD_HASH`) — cf. sa
+    # définition plus haut sur le filet de temps de réponse. Même message
+    # dans tous les cas : ne pas révéler quel cas précis s'est produit.
+    password_hash = user.password_hash if user and user.password_hash else _LOGIN_TIMING_GUARD_HASH
+    password_ok = verify_password(body.password, password_hash)
+    if user is None or user.password_hash is None or not password_ok:
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect.")
+    return schemas.AuthOut(
+        token=issue_session_token(user.id, settings.jwt_secret),
+        user=schemas.UserOut.model_validate(user),
+    )
+
+
+@router.post("/auth/google", response_model=schemas.AuthOut)
+async def auth_google(
+    body: schemas.GoogleAuthIn,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> schemas.AuthOut:
+    if not settings.google_oauth_client_id:
+        raise HTTPException(status_code=503, detail="La connexion Google n'est pas configurée sur ce serveur.")
+    try:
+        identity = verify_google_id_token(body.id_token, settings.google_oauth_client_id)
+    except Exception as exc:  # bibliothèque externe, plusieurs causes possibles (signature, expiration,
+        # mauvaise audience) — toutes se traduisent en 401 côté client, pas la peine de les distinguer.
+        raise HTTPException(status_code=401, detail="Jeton Google invalide ou expiré.") from exc
+
+    result = await db.execute(select(User).where(User.google_sub == identity.sub))
+    user = result.scalar_one_or_none()
+    if user is None:
+        # Un compte mot de passe existe déjà avec cet email : on le
+        # rattache plutôt que de créer un doublon — Google a déjà vérifié
+        # la propriété de cet email, ce rattachement est donc sûr.
+        result = await db.execute(select(User).where(User.email == identity.email))
+        user = result.scalar_one_or_none()
+        if user is not None:
+            user.google_sub = identity.sub
+        else:
+            user = User(email=identity.email, name=identity.name, google_sub=identity.sub)
+            db.add(user)
+        try:
+            await db.commit()
+        except IntegrityError:
+            # Deux connexions Google concurrentes pour le même compte tout
+            # juste créé (deux onglets) : la ligne existe déjà côté base,
+            # on la relit plutôt que de planter en 500 pour une course
+            # inoffensive.
+            await db.rollback()
+            result = await db.execute(select(User).where(User.google_sub == identity.sub))
+            user = result.scalar_one()
+        else:
+            await db.refresh(user)
+
+    return schemas.AuthOut(
+        token=issue_session_token(user.id, settings.jwt_secret),
+        user=schemas.UserOut.model_validate(user),
+    )
+
+
+@router.get("/auth/me", response_model=schemas.UserOut)
+async def get_me(current_user: User = Depends(get_current_user)) -> User:
+    return current_user
+
+
 @router.post("/events", response_model=schemas.EventOut, status_code=201)
 async def create_event(
     body: schemas.EventCreate,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
 ) -> Event:
@@ -52,6 +171,8 @@ async def create_event(
         depot_address=body.depot_address,
         depot_lat=lat,
         depot_lon=lon,
+        event_date=body.event_date,
+        owner_id=current_user.id,
     )
     db.add(event)
     await db.commit()
@@ -64,10 +185,96 @@ async def get_event(event_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
     return await _load_event_with_participants(db, event_id)
 
 
+@router.post("/events/{event_id}/comments", response_model=schemas.CommentOut, status_code=201)
+async def add_comment(
+    event_id: uuid.UUID,
+    body: schemas.CommentCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> schemas.CommentOut:
+    await _get_event_or_404(db, event_id)
+    comment = Comment(event_id=event_id, author_id=current_user.id, body=body.body)
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment)
+    # Construit à la main plutôt que via from_attributes=True sur `comment`
+    # directement : `author_name` lit `comment.author`, une relation qui
+    # n'a pas besoin d'être rechargée puisqu'on connaît déjà le nom
+    # (`current_user`) sans aller-retour SQL supplémentaire.
+    return schemas.CommentOut(
+        id=comment.id,
+        author_id=current_user.id,
+        author_name=current_user.name,
+        body=comment.body,
+        created_at=comment.created_at,
+    )
+
+
+@router.delete("/events/{event_id}/comments/{comment_id}", status_code=204, response_class=Response)
+async def remove_comment(
+    event_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    stmt = select(Comment).where(Comment.id == comment_id, Comment.event_id == event_id)
+    result = await db.execute(stmt)
+    comment = result.scalar_one_or_none()
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Commentaire introuvable pour cet événement.")
+    if comment.author_id != current_user.id:
+        event = await _get_event_or_404(db, event_id)
+        _check_owner_or_open(event, current_user)
+    await db.delete(comment)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/events/{event_id}/cover-image", status_code=204, response_class=Response)
+async def upload_cover_image(
+    event_id: uuid.UUID,
+    file: UploadFile,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    event = await _get_event_or_404(db, event_id)
+    _check_owner_or_open(event, current_user)
+    if file.content_type not in ALLOWED_COVER_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=422, detail="Format d'image non pris en charge (jpeg, png ou webp uniquement)."
+        )
+    data = await file.read()
+    if len(data) > MAX_COVER_IMAGE_BYTES:
+        raise HTTPException(status_code=422, detail="Image trop volumineuse (3 Mo maximum).")
+
+    event.cover_image = data
+    event.cover_image_content_type = file.content_type
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.get("/events/{event_id}/cover-image")
+async def get_cover_image(event_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Response:
+    # Publique, sans authentification : un événement partagé par lien doit
+    # afficher son image de couverture sans que le visiteur soit connecté,
+    # comme le reste de la lecture (cf. matrice d'autorisation du plan).
+    stmt = select(Event).options(undefer(Event.cover_image)).where(Event.id == event_id)
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    if event is None or event.cover_image is None:
+        raise HTTPException(status_code=404, detail="Pas d'image de couverture pour cet événement.")
+    return Response(
+        content=event.cover_image,
+        media_type=event.cover_image_content_type or "application/octet-stream",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @router.post("/events/{event_id}/drivers", response_model=schemas.DriverOut, status_code=201)
 async def add_driver(
     event_id: uuid.UUID,
     body: schemas.DriverCreate,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
 ) -> Driver:
@@ -82,6 +289,7 @@ async def add_driver(
         address=body.address,
         lat=lat,
         lon=lon,
+        user_id=current_user.id,
     )
     db.add(driver)
     await db.commit()
@@ -93,6 +301,7 @@ async def add_driver(
 async def add_passenger(
     event_id: uuid.UUID,
     body: schemas.PassengerCreate,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
 ) -> Passenger:
@@ -106,6 +315,7 @@ async def add_passenger(
         address=body.address,
         lat=lat,
         lon=lon,
+        user_id=current_user.id,
     )
     db.add(passenger)
     await db.commit()
@@ -117,9 +327,13 @@ async def add_passenger(
 async def remove_driver(
     event_id: uuid.UUID,
     driver_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     driver = await _get_participant_or_404(db, Driver, event_id, driver_id)
+    event = await _get_event_or_404(db, event_id)
+    if not _can_remove_participant(event, driver.user_id, current_user):
+        raise HTTPException(status_code=403, detail="Tu ne peux retirer que ta propre inscription.")
     await db.delete(driver)
     await db.commit()
     return Response(status_code=204)
@@ -129,9 +343,13 @@ async def remove_driver(
 async def remove_passenger(
     event_id: uuid.UUID,
     passenger_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     passenger = await _get_participant_or_404(db, Passenger, event_id, passenger_id)
+    event = await _get_event_or_404(db, event_id)
+    if not _can_remove_participant(event, passenger.user_id, current_user):
+        raise HTTPException(status_code=403, detail="Tu ne peux retirer que ta propre inscription.")
     await db.delete(passenger)
     await db.commit()
     return Response(status_code=204)
@@ -141,11 +359,15 @@ async def remove_passenger(
 async def solve_event(
     event_id: uuid.UUID,
     direction: Direction,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     matrix_provider: FallbackMatrixProvider = Depends(get_matrix_provider),
     settings: Settings = Depends(get_settings),
 ) -> schemas.SolutionOut:
     event = await _load_event_with_participants(db, event_id)
+    # Réservé à l'organisateur : c'est lui qui décide de (re)calculer les
+    # tournées, pas n'importe quel inscrit — cf. matrice d'autorisation du plan.
+    _check_owner_or_open(event, current_user)
     drivers = [d for d in event.drivers if d.direction == direction]
     passengers = [p for p in event.passengers if p.direction == direction]
 
@@ -272,6 +494,7 @@ async def get_latest_solution(
 async def move_stop(
     event_id: uuid.UUID,
     body: schemas.MoveStopIn,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     matrix_provider: FallbackMatrixProvider = Depends(get_matrix_provider),
 ) -> schemas.SolutionOut:
@@ -282,11 +505,15 @@ async def move_stop(
     présents — pas de chemin de code séparé pour le réordonnancement
     intra-tournée.
 
+    Réservé à l'organisateur, comme le calcul initial (cf. matrice
+    d'autorisation du plan) : c'est lui qui réorganise les tournées.
+
     Surcapacité volontairement autorisée (pas de 422) : cohérent avec
     l'indicateur `seatsLeft < 0` déjà affiché côté événement plutôt qu'un
-    blocage, l'app fait confiance à l'organisateur (pas d'authentification).
+    blocage.
     """
     event = await _load_event_with_participants(db, event_id)
+    _check_owner_or_open(event, current_user)
 
     passenger = next((p for p in event.passengers if p.id == body.passenger_id), None)
     if passenger is None:
@@ -437,7 +664,14 @@ async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID) -> Event:
 async def _load_event_with_participants(db: AsyncSession, event_id: uuid.UUID) -> Event:
     stmt = (
         select(Event)
-        .options(selectinload(Event.drivers), selectinload(Event.passengers))
+        .options(
+            selectinload(Event.drivers),
+            selectinload(Event.passengers),
+            # .author chargé avec : Comment.author_name (lu par CommentOut)
+            # y accède directement, une relation non chargée planterait en
+            # contexte async plutôt que de faire un aller-retour SQL implicite.
+            selectinload(Event.comments).selectinload(Comment.author),
+        )
         .where(Event.id == event_id)
     )
     result = await db.execute(stmt)
@@ -445,6 +679,26 @@ async def _load_event_with_participants(db: AsyncSession, event_id: uuid.UUID) -
     if event is None:
         raise HTTPException(status_code=404, detail="Événement introuvable.")
     return event
+
+
+def _check_owner_or_open(event: Event, current_user: User) -> None:
+    """Autorise si l'événement n'a pas encore de propriétaire (créé avant
+    l'authentification, cf. migration 0003) ou si l'utilisateur connecté en
+    est le propriétaire. Lève 403 sinon."""
+    if event.owner_id is not None and event.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Seul l'organisateur de cet événement peut faire ça.")
+
+
+def _can_remove_participant(event: Event, participant_user_id: uuid.UUID | None, current_user: User) -> bool:
+    """Cf. matrice d'autorisation du plan : la personne elle-même, une
+    ancienne inscription sans propriétaire connu, un événement sans
+    organisateur connu, ou l'organisateur lui-même."""
+    return (
+        participant_user_id == current_user.id
+        or participant_user_id is None
+        or event.owner_id is None
+        or event.owner_id == current_user.id
+    )
 
 
 _Participant = TypeVar("_Participant", Driver, Passenger)

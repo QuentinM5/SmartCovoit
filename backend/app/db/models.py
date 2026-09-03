@@ -8,9 +8,10 @@ au démarrage, qui serait une source de course entre les deux instances.
 from __future__ import annotations
 
 import uuid
+from datetime import date as date_
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -37,6 +38,26 @@ def _direction_column() -> SAEnum:
     return SAEnum(Direction, name="direction", values_callable=lambda enum_cls: [e.value for e in enum_cls])
 
 
+class User(Base):
+    """Un compte, natif (mot de passe) et/ou Google — l'email est la clé
+    d'identité commune aux deux : une connexion Google dont l'email
+    correspond déjà à un compte mot de passe rattache l'un à l'autre plutôt
+    que de dupliquer (Google vérifie lui-même la propriété de l'email, ce
+    rattachement est donc sûr)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    # Nul si le compte n'a jamais utilisé de mot de passe (connexion Google
+    # uniquement). google_sub : identifiant stable Google (le champ `sub` du
+    # jeton d'identité), nul si le compte n'a jamais utilisé Google.
+    password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class Event(Base):
     __tablename__ = "events"
 
@@ -48,7 +69,33 @@ class Event(Base):
     depot_address: Mapped[str] = mapped_column(String(500))
     depot_lat: Mapped[float] = mapped_column(Float)
     depot_lon: Mapped[float] = mapped_column(Float)
+    event_date: Mapped[date_] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # Nul pour les événements créés avant l'authentification (migration
+    # 0003) : aucun utilisateur réel n'existe pour ces anciennes lignes,
+    # inventer un rattachement serait pire que ne rien mettre. `SET NULL` à
+    # la suppression du compte plutôt que `CASCADE` : supprimer un compte ne
+    # doit pas supprimer les événements qu'il a créés.
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # Octets bruts en base plutôt qu'un service de stockage objet dédié : une
+    # image de couverture par événement, petite, ne justifie pas une pièce
+    # d'infra de plus à maintenir sur deux hôtes backend (cf. décision de
+    # plan). content_type permet de resservir le bon en-tête sans deviner.
+    # `deferred=True` : ces octets ne sont chargés que quand explicitement
+    # demandés (`undefer`, cf. GET /events/{id}/cover-image dans routes.py)
+    # — sinon chaque lecture d'événement rapatrierait jusqu'à 3 Mo pour rien.
+    cover_image: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    cover_image_content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    @property
+    def has_cover_image(self) -> bool:
+        # Vérifie `cover_image_content_type` (jamais différé, toujours posé
+        # en même temps que `cover_image` à l'upload/suppression) plutôt que
+        # `cover_image` lui-même : ce dernier est `deferred`, y accéder ici
+        # déclencherait justement le chargement qu'on veut éviter.
+        return self.cover_image_content_type is not None
 
     # order_by explicite : le numérotage des nœuds passés au solveur dérive de
     # cet ordre, il doit être stable d'un chargement à l'autre.
@@ -60,6 +107,9 @@ class Event(Base):
     )
     solutions: Mapped[list["SolutionRecord"]] = relationship(
         back_populates="event", cascade="all, delete-orphan", order_by="SolutionRecord.created_at"
+    )
+    comments: Mapped[list["Comment"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", order_by="Comment.created_at"
     )
 
 
@@ -77,6 +127,11 @@ class Driver(Base):
     lat: Mapped[float] = mapped_column(Float)
     lon: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # Nul pour les inscriptions faites avant l'authentification — cf.
+    # `Event.owner_id` pour le même raisonnement.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     event: Mapped["Event"] = relationship(back_populates="drivers")
 
@@ -92,8 +147,36 @@ class Passenger(Base):
     lat: Mapped[float] = mapped_column(Float)
     lon: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     event: Mapped["Event"] = relationship(back_populates="passengers")
+
+
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
+    # Pas de texte libre non vérifié comme pour Driver/Passenger à l'origine
+    # : commenter exige désormais un compte, donc l'auteur est une vraie
+    # référence plutôt qu'un nom déclaré. `CASCADE` (pas `SET NULL`) : un
+    # commentaire sans auteur connu n'a pas de sens à garder.
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    body: Mapped[str] = mapped_column(String(2000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    event: Mapped["Event"] = relationship(back_populates="comments")
+    author: Mapped["User"] = relationship()
+
+    @property
+    def author_name(self) -> str:
+        # Lu par CommentOut (from_attributes=True) — suppose `author` déjà
+        # chargé par un selectinload (cf. _load_event_with_participants dans
+        # routes.py) : accéder à une relation non chargée planterait en
+        # contexte async plutôt que de faire un aller-retour SQL implicite.
+        return self.author.name
 
 
 class SolutionRecord(Base):

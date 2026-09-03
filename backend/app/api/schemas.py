@@ -3,11 +3,45 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date as date_
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.solver.model import Direction
+
+
+class SignupIn(BaseModel):
+    email: EmailStr
+    name: str = Field(min_length=1, max_length=200)
+    # 72 = limite intrinsèque de bcrypt (les octets au-delà sont ignorés) —
+    # mieux vaut le refuser explicitement que de tronquer silencieusement un
+    # mot de passe plus long que ce que l'utilisateur croit avoir choisi.
+    password: str = Field(min_length=8, max_length=72)
+
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=72)
+
+
+class GoogleAuthIn(BaseModel):
+    # Jeton d'identité renvoyé par Google Identity Services côté client (pas
+    # un code d'autorisation) — cf. décision 2 du plan.
+    id_token: str
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: str
+    name: str
+
+
+class AuthOut(BaseModel):
+    token: str
+    user: UserOut
 
 
 class Located(BaseModel):
@@ -32,6 +66,7 @@ class Located(BaseModel):
 class EventCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     depot_address: str = Field(min_length=1, max_length=500)
+    event_date: date_
     # Optionnel : généré côté client pour naviguer vers /events/{id} sans
     # attendre la réponse de ce POST (cf. app/page.tsx) ; absent, le serveur
     # en génère un comme avant. Collision UUID v4 : risque nul en pratique,
@@ -47,7 +82,15 @@ class EventOut(BaseModel):
     depot_address: str
     depot_lat: float
     depot_lon: float
+    event_date: date_
     created_at: datetime
+    # Nul pour les événements créés avant l'authentification — cf. migration
+    # 0003 et la matrice d'autorisation du plan.
+    owner_id: uuid.UUID | None
+    # Booléen calculé plutôt que les octets bruts : évite de gonfler cette
+    # réponse JSON avec une image ; récupérée séparément via
+    # GET /events/{id}/cover-image.
+    has_cover_image: bool
 
 
 class DriverCreate(Located):
@@ -86,6 +129,22 @@ class PassengerOut(BaseModel):
     direction: Direction
 
 
+class CommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class CommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    author_id: uuid.UUID
+    # Nom affiché au moment de la lecture (celui du compte auteur), pas un
+    # texte libre saisi par le commentateur — cf. modèle `Comment.author`.
+    author_name: str
+    body: str
+    created_at: datetime
+
+
 class EventDetailOut(EventOut):
     """Extension au-delà des endpoints minimaux du brief : nécessaire pour
     qu'une page événement affiche l'état courant (conducteurs/passagers déjà
@@ -94,6 +153,7 @@ class EventDetailOut(EventOut):
 
     drivers: list[DriverOut]
     passengers: list[PassengerOut]
+    comments: list[CommentOut]
 
 
 class StopOut(BaseModel):

@@ -8,3 +8,9 @@ pydantic-settings==2.7.1
 ortools==9.11.4210
 httpx==0.28.1
 anyio==4.7.0
+bcrypt==4.2.1
+pyjwt==2.10.1
+google-auth==2.36.0
+requests==2.32.3
+python-multipart==0.0.20
+email-validator==2.2.0

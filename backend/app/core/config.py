@@ -38,6 +38,21 @@ class Settings(BaseSettings):
     # Liste séparée par des virgules, ex. "http://localhost:3000,https://covoit.example.com"
     cors_origins: str = "http://localhost:3000"
 
+    # Secret de signature des jetons de session (JWT). Contrairement aux
+    # autres variables ci-dessus, PAS de valeur par défaut : un secret de
+    # signature avec un défaut connu de tous serait une faille, pas une
+    # dégradation gracieuse. Son absence fait échouer le démarrage
+    # (pydantic-settings lève dès l'instanciation), plutôt qu'une appli qui
+    # tourne en signant des jetons avec une valeur devinable.
+    jwt_secret: str
+
+    # Vide = connexion Google désactivée (le bouton peut rester affiché côté
+    # frontend, mais /auth/google renverra une erreur claire) — dégradation
+    # cohérente avec le reste de ce fichier. C'est l'identifiant client
+    # Google (public, pas un secret) : sert uniquement à vérifier que le
+    # jeton d'identité présenté a bien été émis pour cette appli.
+    google_oauth_client_id: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
