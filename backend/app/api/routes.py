@@ -165,8 +165,9 @@ async def create_event(
 ) -> Event:
     lat, lon = await _locate_or_422(geocoder, body.depot_address, body.coords)
 
+    event_id = body.id or uuid.uuid4()
     event = Event(
-        id=body.id or uuid.uuid4(),
+        id=event_id,
         name=body.name,
         depot_address=body.depot_address,
         depot_lat=lat,
@@ -176,7 +177,21 @@ async def create_event(
         owner_id=current_user.id,
     )
     db.add(event)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Rejeu d'un POST déjà appliqué (cf. worker/failover-policy.ts : un
+        # échec de transport sur le primaire peut rejouer une écriture déjà
+        # traitée) : l'id est fourni par le client (app/page.tsx génère un
+        # crypto.randomUUID() avant même la réponse serveur), donc un id qui
+        # existe déjà signifie très probablement "même création, deuxième
+        # tentative" plutôt qu'une vraie collision. On renvoie l'événement
+        # existant plutôt que de planter en 500.
+        await db.rollback()
+        existing = await db.get(Event, event_id)
+        if existing is not None:
+            return existing
+        raise
     await db.refresh(event)
     return event
 
@@ -237,7 +252,9 @@ async def add_driver(
     await _get_event_or_404(db, event_id)
     lat, lon = await _locate_or_422(geocoder, body.address, body.coords)
 
+    driver_id = body.id or uuid.uuid4()
     driver = Driver(
+        id=driver_id,
         event_id=event_id,
         direction=body.direction,
         name=body.name,
@@ -248,7 +265,17 @@ async def add_driver(
         user_id=current_user.id,
     )
     db.add(driver)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Rejeu d'un POST déjà appliqué (cf. failover-policy.ts) : l'id est
+        # fourni par le client, un id qui existe déjà est très probablement
+        # la même inscription rejouée plutôt qu'une vraie collision.
+        await db.rollback()
+        existing = await db.get(Driver, driver_id)
+        if existing is not None:
+            return existing
+        raise
     await db.refresh(driver)
     return driver
 
@@ -264,7 +291,9 @@ async def add_passenger(
     await _get_event_or_404(db, event_id)
     lat, lon = await _locate_or_422(geocoder, body.address, body.coords)
 
+    passenger_id = body.id or uuid.uuid4()
     passenger = Passenger(
+        id=passenger_id,
         event_id=event_id,
         direction=body.direction,
         name=body.name,
@@ -274,7 +303,15 @@ async def add_passenger(
         user_id=current_user.id,
     )
     db.add(passenger)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Cf. add_driver : rejeu d'un POST déjà appliqué.
+        await db.rollback()
+        existing = await db.get(Passenger, passenger_id)
+        if existing is not None:
+            return existing
+        raise
     await db.refresh(passenger)
     return passenger
 

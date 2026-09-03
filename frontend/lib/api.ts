@@ -176,14 +176,17 @@ export function getEvent(id: string) {
 
 export function addDriver(
   eventId: string,
-  data: { name: string; seats: number; address: string; direction: Direction } & AddressFields,
+  // `id` optionnel : le fournir permet à un rejeu de cette requête (worker
+  // de failover après un échec de transport) de retomber sur la même ligne
+  // côté serveur plutôt que d'en créer une deuxième.
+  data: { id?: string; name: string; seats: number; address: string; direction: Direction } & AddressFields,
 ) {
   return request<Driver>(`/events/${eventId}/drivers`, { method: "POST", body: JSON.stringify(data) });
 }
 
 export function addPassenger(
   eventId: string,
-  data: { name: string; address: string; direction: Direction } & AddressFields,
+  data: { id?: string; name: string; address: string; direction: Direction } & AddressFields,
 ) {
   return request<Passenger>(`/events/${eventId}/passengers`, { method: "POST", body: JSON.stringify(data) });
 }

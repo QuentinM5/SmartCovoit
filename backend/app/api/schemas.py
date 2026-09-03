@@ -102,6 +102,11 @@ class DriverCreate(Located):
     seats: int = Field(gt=0, le=20)
     address: str = Field(min_length=1, max_length=500)
     direction: Direction
+    # Optionnel : généré côté client (cf. EventCreate.id) pour que le rejeu
+    # d'un POST par le worker de failover (échec de transport sur le
+    # primaire) retombe sur la même ligne plutôt que d'en créer une
+    # deuxième. Absent, le serveur en génère un comme avant.
+    id: uuid.UUID | None = None
 
 
 class DriverOut(BaseModel):
@@ -120,6 +125,8 @@ class PassengerCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     address: str = Field(min_length=1, max_length=500)
     direction: Direction
+    # Cf. DriverCreate.id.
+    id: uuid.UUID | None = None
 
 
 class PassengerOut(BaseModel):

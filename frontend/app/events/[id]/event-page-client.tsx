@@ -176,7 +176,12 @@ export function EventPageClient({ id }: { id: string }) {
     directions: Direction[],
     data: { name: string; seats: number; address: string; lat: number | null; lon: number | null },
   ): Promise<void> {
-    const tempIds = directions.map(() => `optimistic-${crypto.randomUUID()}`);
+    // De vrais UUID, pas des ids "optimistic-..." : envoyés tels quels au
+    // serveur (cf. DriverCreate.id/PassengerCreate.id), ce qui rend un
+    // rejeu de ce POST par le worker de failover idempotent (la ligne
+    // existe déjà, le serveur la renvoie au lieu d'en créer une deuxième)
+    // et évite au passage l'échange "id provisoire -> id définitif".
+    const tempIds = directions.map(() => crypto.randomUUID());
 
     setEvent((current) => {
       if (!current) return current;
@@ -208,9 +213,10 @@ export function EventPageClient({ id }: { id: string }) {
 
     try {
       await Promise.all(
-        directions.map((direction) =>
+        directions.map((direction, i) =>
           role === "driver"
             ? addDriver(id, {
+                id: tempIds[i],
                 name: data.name,
                 seats: data.seats,
                 address: data.address,
@@ -219,6 +225,7 @@ export function EventPageClient({ id }: { id: string }) {
                 direction,
               })
             : addPassenger(id, {
+                id: tempIds[i],
                 name: data.name,
                 address: data.address,
                 lat: data.lat,
