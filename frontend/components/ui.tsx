@@ -23,7 +23,10 @@ export function Header({ back = false }: { back?: boolean }) {
               compte est en fait déjà connecté. */}
           {!loading &&
             (user ? (
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-3 text-sm">
+                <Link href="/events" className="text-muted transition hover:text-ink">
+                  Mes événements
+                </Link>
                 <span className="hidden text-muted sm:inline">{user.name}</span>
                 <button
                   type="button"

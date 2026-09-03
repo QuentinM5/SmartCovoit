@@ -1,8 +1,10 @@
 "use client";
 
-import { ImagePlus } from "lucide-react";
+import { ImagePlus, Pencil } from "lucide-react";
+import Link from "next/link";
 import { DirectionGlyph } from "@/components/direction";
 import { CopyLinkButton } from "@/components/copy-link-button";
+import { DownloadIcsButton } from "@/components/download-ics-button";
 import { LocationMap } from "@/components/location-map";
 import { ErrorNote } from "@/components/ui";
 import { coverImageUrl, type Direction, type EventDetail } from "@/lib/api";
@@ -67,7 +69,10 @@ export function EventHeader({
               </p>
             </div>
           </div>
-          <CopyLinkButton className="mt-1" />
+          <div className="mt-1 flex shrink-0 flex-wrap gap-2">
+            <DownloadIcsButton event={event} />
+            <CopyLinkButton />
+          </div>
         </div>
       </div>
 
@@ -76,25 +81,34 @@ export function EventHeader({
       )}
 
       {canManage && (
-        <label className="mt-3 inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink">
-          <ImagePlus className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-          {uploadingCoverImage
-            ? "Envoi…"
-            : event.has_cover_image
-              ? "Changer l'image"
-              : "Ajouter une image"}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="sr-only"
-            disabled={uploadingCoverImage}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) onUploadCoverImage(file);
-            }}
-          />
-        </label>
+        <div className="mt-3 flex flex-wrap items-center gap-4">
+          <Link
+            href={`/events/${event.id}/edit`}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink"
+          >
+            <Pencil className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+            Modifier l&apos;événement
+          </Link>
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink">
+            <ImagePlus className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+            {uploadingCoverImage
+              ? "Envoi…"
+              : event.has_cover_image
+                ? "Changer l'image"
+                : "Ajouter une image"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              disabled={uploadingCoverImage}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) onUploadCoverImage(file);
+              }}
+            />
+          </label>
+        </div>
       )}
       {coverImageError && <ErrorNote>{coverImageError}</ErrorNote>}
     </section>

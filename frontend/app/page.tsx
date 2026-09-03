@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { createEvent } from "@/lib/api";
-import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
-import { Button, ButtonLink, Field, Header, inputClass } from "@/components/ui";
+import { EventForm, type EventFormValues } from "@/components/event-form";
+import { ButtonLink, Header } from "@/components/ui";
 import { writeNewEventSeed } from "@/lib/new-event-seed";
 
 // Vide au premier rendu, posée juste après (cf. useEffect ci-dessous) plutôt
@@ -19,31 +19,17 @@ function todayIsoDate(): string {
 export default function HomePage() {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const [name, setName] = useState("");
-  const [eventDate, setEventDate] = useState("");
-  const [description, setDescription] = useState("");
-  const [depot, setDepot] = useState<AddressValue>({ address: "", lat: null, lon: null });
-  const [addressAvailable, setAddressAvailable] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [today, setToday] = useState("");
 
   useEffect(() => {
     // `queueMicrotask` plutôt qu'un appel synchrone : poser un state
     // directement dans le corps d'un effet déclenche des rendus en cascade
     // (règle react-hooks/set-state-in-effect) — différer d'un micro-tick
     // évite ça sans changer le comportement perçu.
-    queueMicrotask(() => setEventDate(todayIsoDate()));
+    queueMicrotask(() => setToday(todayIsoDate()));
   }, []);
 
-  const depotIncomplete = needsSelection(depot, addressAvailable);
-
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    // Filet de sécurité au cas où le formulaire serait soumis autrement que
-    // par le bouton (Entrée dans un champ) : le bouton désactivé ne suffit
-    // pas toujours à bloquer la soumission clavier.
-    if (depotIncomplete || !eventDate || submitting) return;
-    setSubmitting(true);
-
+  function handleSubmit(values: EventFormValues) {
     // Id généré ici plutôt qu'attendu du serveur : la navigation démarre
     // avant même que POST /events ait répondu, pour que rien ne soit
     // visiblement en attente côté utilisateur. `createEvent` tourne ensuite
@@ -53,15 +39,17 @@ export default function HomePage() {
     const id = crypto.randomUUID();
     writeNewEventSeed({
       id,
-      name,
-      depot_address: depot.address,
-      depot_lat: depot.lat ?? 0,
-      depot_lon: depot.lon ?? 0,
-      event_date: eventDate,
-      description: description.trim() || null,
+      name: values.name,
+      depot_address: values.depot.address,
+      depot_lat: values.depot.lat ?? 0,
+      depot_lon: values.depot.lon ?? 0,
+      event_date: values.eventDate,
+      description: values.description.trim() || null,
       created_at: new Date().toISOString(),
       owner_id: user?.id ?? null,
       has_cover_image: false,
+      fuel_price_per_l: null,
+      consumption_l_per_100km: null,
       drivers: [],
       passengers: [],
     });
@@ -69,12 +57,12 @@ export default function HomePage() {
 
     createEvent({
       id,
-      name,
-      depot_address: depot.address,
-      event_date: eventDate,
-      description: description.trim() || null,
-      lat: depot.lat,
-      lon: depot.lon,
+      name: values.name,
+      depot_address: values.depot.address,
+      event_date: values.eventDate,
+      description: values.description.trim() || null,
+      lat: values.depot.lat,
+      lon: values.depot.lon,
     }).catch(() => {
       // Rien à faire côté ce composant, déjà en train de se démonter suite
       // à router.push — la page de destination porte la gestion de l'échec.
@@ -113,57 +101,20 @@ export default function HomePage() {
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="mx-auto mt-10 flex max-w-lg flex-col gap-6">
-            <Field label="Nom de l'événement">
-              <input
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Sortie ski, tournoi, mariage…"
-                className={inputClass}
-              />
-            </Field>
-
-            <Field label="Date de l'événement">
-              <input
-                required
-                type="date"
-                value={eventDate}
-                onChange={(e) => setEventDate(e.target.value)}
-                className={`${inputClass} tabular font-mono`}
-              />
-            </Field>
-
-            <Field label="Adresse de l'événement" hint="Là où tout le monde se retrouve.">
-              <AddressInput
-                required
-                value={depot}
-                onChange={setDepot}
-                onAvailabilityChange={setAddressAvailable}
-                placeholder="Commence à taper une adresse…"
-              />
-            </Field>
-
-            <Field
-              label="Message pour le groupe"
-              hint="Visible sur la page, par exemple les consignes de rendez-vous. Facultatif."
-            >
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Ex. : on se retrouve devant l'entrée principale, prévoir des chaussures de marche…"
-                rows={3}
-                maxLength={2000}
-                className={`${inputClass} resize-y`}
-              />
-            </Field>
-
-            <div>
-              <Button type="submit" disabled={depotIncomplete || !eventDate || submitting}>
-                {submitting ? "Création…" : "Créer l'événement"}
-              </Button>
-            </div>
-          </form>
+          <div className="mx-auto mt-10 max-w-lg">
+            <EventForm
+              // `key` : force un remontage quand `today` passe de "" à la
+              // vraie date (cf. le useEffect ci-dessus) — `initialValues`
+              // n'est lu par EventForm qu'à son premier rendu (useState),
+              // un remontage est le seul moyen de lui faire reprendre cette
+              // valeur par défaut une fois connue.
+              key={today}
+              initialValues={{ eventDate: today }}
+              submitLabel="Créer l'événement"
+              submittingLabel="Création…"
+              onSubmit={handleSubmit}
+            />
+          </div>
         )}
       </main>
     </>

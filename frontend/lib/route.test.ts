@@ -19,6 +19,8 @@ function baseEvent(overrides: Partial<EventDetail> = {}): EventDetail {
     created_at: "2026-01-01T00:00:00Z",
     owner_id: null,
     has_cover_image: false,
+    fuel_price_per_l: null,
+    consumption_l_per_100km: null,
     drivers: [],
     passengers: [],
     ...overrides,

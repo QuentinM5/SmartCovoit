@@ -36,6 +36,18 @@ export interface EventOut {
   /** Nul pour les événements créés avant l'authentification. */
   owner_id: string | null;
   has_cover_image: boolean;
+  /** Barème du partage de frais. Nuls = jamais personnalisés par
+   * l'organisateur — appliquer alors les mêmes valeurs par défaut que le
+   * serveur (cf. lib/cost.ts), pas 0. */
+  fuel_price_per_l: number | null;
+  consumption_l_per_100km: number | null;
+}
+
+/** Un événement listé par GET /events, avec le statut du compte connecté
+ * vis-à-vis de cet événement (organisateur et/ou inscrit). */
+export interface MyEvent extends EventOut {
+  is_owner: boolean;
+  my_directions: Direction[];
 }
 
 export interface Driver {
@@ -172,6 +184,29 @@ export function createEvent(
 
 export function getEvent(id: string) {
   return request<EventDetail>(`/events/${id}`);
+}
+
+export function getMyEvents() {
+  return request<MyEvent[]>("/events");
+}
+
+/**
+ * Tous les champs optionnels : seuls ceux fournis sont modifiés côté
+ * serveur (`model_dump(exclude_unset=True)`) — `null` explicite remet un
+ * champ de frais au défaut, l'omettre le laisse inchangé.
+ */
+export function updateEvent(
+  id: string,
+  data: {
+    name?: string;
+    depot_address?: string;
+    event_date?: string;
+    description?: string | null;
+    fuel_price_per_l?: number | null;
+    consumption_l_per_100km?: number | null;
+  } & AddressFields,
+) {
+  return request<EventOut>(`/events/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
 export function addDriver(

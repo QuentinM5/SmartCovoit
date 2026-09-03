@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { ExternalLink, GripVertical } from "lucide-react";
 import { ROUTE_COLORS } from "@/components/route-map";
+import { formatEuros } from "@/lib/cost";
 import type { DragInfo, DragStartParams } from "@/lib/use-passenger-drag";
 import {
   formatDistance,
@@ -29,6 +30,7 @@ export function RouteLine({
   seats,
   distanceM,
   durationS,
+  costEuros,
   stops,
   index,
   onHoverChange,
@@ -44,6 +46,9 @@ export function RouteLine({
   seats: number;
   distanceM: number;
   durationS?: number | null;
+  /** Coût estimé de cette tournée (barème de l'événement) — absent si aucun
+   * partage de frais n'est configuré. */
+  costEuros?: number | null;
   stops: ResolvedStop[];
   index: number;
   onHoverChange?: (active: boolean) => void;
@@ -112,6 +117,12 @@ export function RouteLine({
             {passengerCount} / {seats} {seats > 1 ? "places" : "place"}
           </span>
           {overCapacity && <span className="text-danger"> · surcapacité</span>}
+          {costEuros != null && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className="font-mono">{formatEuros(costEuros)}</span>
+            </>
+          )}
         </p>
       </header>
 

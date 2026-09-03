@@ -2,6 +2,7 @@
 
 import { RouteLine } from "@/components/route-line";
 import { RouteMap, type MapRoute } from "@/components/route-map";
+import { formatEuros, routeCostEuros } from "@/lib/cost";
 import { formatDistance, formatDuration } from "@/lib/route";
 import type { DragInfo, DragStartParams } from "@/lib/use-passenger-drag";
 import type { EventDetail, Solution } from "@/lib/api";
@@ -37,6 +38,9 @@ export function RoutesSection({
   onConfirmOvercapacity: () => void;
   onCancelOvercapacity: () => void;
 }) {
+  const costParams = { fuelPricePerL: event.fuel_price_per_l, consumptionLPer100Km: event.consumption_l_per_100km };
+  const totalCostEuros = routeCostEuros(solution.total_distance_m, costParams);
+
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -52,6 +56,8 @@ export function RoutesSection({
               <span className="font-mono">{formatDistance(solution.total_distance_m)}</span> au total
             </>
           )}
+          <span aria-hidden="true"> · </span>
+          <span className="font-mono">{formatEuros(totalCostEuros)}</span> de carburant estimé
         </p>
       </div>
 
@@ -71,6 +77,7 @@ export function RoutesSection({
               seats={driver?.seats ?? 0}
               distanceM={route.distance_m}
               durationS={route.duration_s}
+              costEuros={routeCostEuros(route.distance_m, costParams)}
               stops={mapRoutes[index]?.stops ?? []}
               onHoverChange={(active) => onHoverChange(active ? index : null)}
               onPassengerDragStart={canManage ? onPassengerDragStart : undefined}

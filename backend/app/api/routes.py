@@ -15,7 +15,7 @@ from typing import TypeVar
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
@@ -246,9 +246,97 @@ async def create_event(
     return event
 
 
+@router.get("/events", response_model=list[schemas.MyEventOut])
+async def list_my_events(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[schemas.MyEventOut]:
+    """Les événements où le compte connecté est organisateur OU inscrit
+    (conducteur ou passager, peu importe le sens) — pas seulement ceux
+    qu'il a créés : c'est la vraie question ("comment revenir sur
+    l'événement d'un ami ?"), pas un simple historique de création."""
+    driver_event_ids = select(Driver.event_id).where(Driver.user_id == current_user.id)
+    passenger_event_ids = select(Passenger.event_id).where(Passenger.user_id == current_user.id)
+    stmt = (
+        select(Event)
+        .where(
+            or_(
+                Event.owner_id == current_user.id,
+                Event.id.in_(driver_event_ids),
+                Event.id.in_(passenger_event_ids),
+            )
+        )
+        .order_by(Event.event_date.desc())
+    )
+    events = (await db.scalars(stmt)).all()
+    if not events:
+        return []
+
+    event_ids = [e.id for e in events]
+    directions_by_event: dict[uuid.UUID, set[Direction]] = {e.id: set() for e in events}
+    for participant_model in (Driver, Passenger):
+        rows = await db.execute(
+            select(participant_model.event_id, participant_model.direction).where(
+                participant_model.user_id == current_user.id, participant_model.event_id.in_(event_ids)
+            )
+        )
+        for event_id, direction in rows:
+            directions_by_event[event_id].add(direction)
+
+    return [
+        schemas.MyEventOut(
+            **schemas.EventOut.model_validate(event).model_dump(),
+            is_owner=event.owner_id == current_user.id,
+            my_directions=sorted(directions_by_event[event.id], key=lambda d: d.value),
+        )
+        for event in events
+    ]
+
+
 @router.get("/events/{event_id}", response_model=schemas.EventDetailOut)
 async def get_event(event_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Event:
     return await _load_event_with_participants(db, event_id)
+
+
+@router.patch("/events/{event_id}", response_model=schemas.EventOut)
+async def update_event(
+    event_id: uuid.UUID,
+    body: schemas.EventUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    geocoder: NominatimClient = Depends(get_geocoder),
+    settings: Settings = Depends(get_settings),
+) -> Event:
+    event = await _get_event_or_404(db, event_id)
+    _check_owner_or_open(event, current_user)
+
+    # exclude_unset distingue "absent du corps" (ne pas toucher) de "envoyé,
+    # y compris null" (remettre au défaut) — indispensable pour les deux
+    # champs de frais. lat/lon exclus : gérés à part, ils alimentent
+    # depot_lat/depot_lon, pas des colonnes du même nom.
+    updates = body.model_dump(exclude_unset=True, exclude={"lat", "lon"})
+    address_changed = "depot_address" in updates
+    if address_changed:
+        if not updates["depot_address"]:
+            raise HTTPException(status_code=422, detail="L'adresse ne peut pas être vide.")
+        lat, lon = await _locate_or_422(geocoder, body.depot_address, body.coords)
+        updates["depot_lat"] = lat
+        updates["depot_lon"] = lon
+
+    for field, value in updates.items():
+        setattr(event, field, value)
+
+    if address_changed:
+        # Les tournées déjà calculées partent de l'ancien point de
+        # rendez-vous : les garder afficherait un trajet faux. Le frontend
+        # le détecte comme n'importe quelle absence de solution (404 sur
+        # GET .../solution), même chemin que pour une suppression d'inscrit.
+        await db.execute(delete(SolutionRecord).where(SolutionRecord.event_id == event_id))
+
+    log_event(db, "event_updated", instance=settings.instance_name, event_id=event_id, user_id=current_user.id)
+    await db.commit()
+    await db.refresh(event)
+    return event
 
 
 @router.post("/events/{event_id}/cover-image", status_code=204, response_class=Response)

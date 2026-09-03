@@ -95,6 +95,36 @@ class EventOut(BaseModel):
     # réponse JSON avec une image ; récupérée séparément via
     # GET /events/{id}/cover-image.
     has_cover_image: bool
+    # Barème du partage de frais. Nuls = l'organisateur ne les a jamais
+    # personnalisés ; le client applique alors les mêmes valeurs par défaut
+    # que le serveur (cf. Settings.default_fuel_price_per_l et
+    # default_consumption_l_per_100km) — le même barème par défaut partout
+    # rend le montant affiché identique pour tous les participants, sans
+    # avoir besoin de le résoudre côté serveur.
+    fuel_price_per_l: float | None = None
+    consumption_l_per_100km: float | None = None
+
+
+class EventUpdate(Located):
+    """Tous les champs optionnels : `model_dump(exclude_unset=True)` côté
+    route distingue "absent du corps" (ne pas toucher) de "envoyé, y
+    compris `null`" (remettre au défaut) — indispensable pour
+    fuel_price_per_l/consumption_l_per_100km."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    event_date: date_ | None = None
+    description: str | None = Field(default=None, max_length=2000)
+    depot_address: str | None = Field(default=None, min_length=1, max_length=500)
+    fuel_price_per_l: float | None = Field(default=None, gt=0)
+    consumption_l_per_100km: float | None = Field(default=None, gt=0)
+
+
+class MyEventOut(EventOut):
+    """Cf. GET /events : un événement où le compte connecté est soit
+    organisateur, soit inscrit (peu importe le sens)."""
+
+    is_owner: bool
+    my_directions: list[Direction]
 
 
 class DriverCreate(Located):
