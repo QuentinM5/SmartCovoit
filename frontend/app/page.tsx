@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { createEvent } from "@/lib/api";
 import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
-import { Button, Field, Header, inputClass } from "@/components/ui";
+import { Button, ButtonLink, Field, Header, inputClass } from "@/components/ui";
 import { writeNewEventSeed } from "@/lib/new-event-seed";
 
 // Vide au premier rendu, posée juste après (cf. useEffect ci-dessous) plutôt
@@ -107,21 +106,10 @@ export default function HomePage() {
               l&apos;organises).
             </p>
             <div className="mt-4 flex gap-3">
-              {/* Lien stylé en bouton plutôt que <Button> imbriqué dans
-                  <Link> : un <button> dans un <a> est du HTML invalide
-                  (cf. app/not-found.tsx pour le même motif). */}
-              <Link
-                href="/login?next=%2F"
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition hover:opacity-85"
-              >
-                Se connecter
-              </Link>
-              <Link
-                href="/signup?next=%2F"
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium transition hover:border-ink"
-              >
+              <ButtonLink href="/login?next=%2F">Se connecter</ButtonLink>
+              <ButtonLink href="/signup?next=%2F" variant="quiet">
                 Créer un compte
-              </Link>
+              </ButtonLink>
             </div>
           </div>
         ) : (

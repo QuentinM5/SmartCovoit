@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { Header } from "@/components/ui";
+import { ButtonLink, Header } from "@/components/ui";
 
 export default function NotFound() {
   return (
@@ -14,12 +13,9 @@ export default function NotFound() {
           <p className="mt-3 text-muted">
             Le lien est peut-être mal copié, ou l&apos;événement n&apos;existe plus.
           </p>
-          <Link
-            href="/"
-            className="mt-6 inline-flex items-center justify-center gap-2 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition hover:opacity-85"
-          >
+          <ButtonLink href="/" className="mt-6">
             Retour à l&apos;accueil
-          </Link>
+          </ButtonLink>
         </div>
       </main>
     </>

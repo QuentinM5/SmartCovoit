@@ -6,12 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
-import { ApiError, login as apiLogin, loginWithGoogle } from "@/lib/api";
-
-function networkMessage(err: unknown, fallback: string): string {
-  if (err instanceof ApiError) return err.message;
-  return fallback;
-}
+import { login as apiLogin, loginWithGoogle } from "@/lib/api";
+import { networkMessage } from "@/lib/event-format";
 
 function LoginForm() {
   const router = useRouter();

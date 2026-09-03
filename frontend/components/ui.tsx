@@ -95,3 +95,29 @@ export function ErrorNote({ children }: { children: ReactNode }) {
     </p>
   );
 }
+
+/** Lien stylé comme un `<Button>`, jamais un `<Button>` imbriqué dans un
+ * `<Link>` — un `<button>` dans un `<a>` est du HTML invalide. Factorisé ici
+ * car dupliqué à l'identique dans plusieurs pages (accueil, 404, invite de
+ * connexion sur la page événement). */
+export function ButtonLink({
+  href,
+  children,
+  variant = "primary",
+  className = "",
+}: {
+  href: string;
+  children: ReactNode;
+  variant?: "primary" | "quiet";
+  className?: string;
+}) {
+  const base = "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition";
+  const styles =
+    variant === "primary" ? "bg-ink text-paper hover:opacity-85" : "border border-line bg-surface hover:border-ink";
+
+  return (
+    <Link href={href} className={`${base} ${styles} ${className}`}>
+      {children}
+    </Link>
+  );
+}
