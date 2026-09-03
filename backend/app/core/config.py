@@ -79,9 +79,19 @@ class Settings(BaseSettings):
     # événement très manipulé croît sans borne.
     max_solutions_kept_per_direction: int = 20
 
+    # Emails autorisés à lire /admin/stats, séparés par des virgules. Vide =
+    # personne (fermé par défaut, pas de compte "admin" implicite) —
+    # contrairement aux autres réglages de ce fichier, une dégradation
+    # ouverte serait ici une faille, pas une simple perte de fonctionnalité.
+    admin_emails: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def admin_emails_list(self) -> list[str]:
+        return [email.strip().lower() for email in self.admin_emails.split(",") if email.strip()]
 
 
 @lru_cache

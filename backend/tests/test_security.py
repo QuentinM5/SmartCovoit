@@ -12,7 +12,11 @@ from unittest.mock import patch
 import jwt
 import pytest
 
+from fastapi import HTTPException
+
+from app.api.deps import get_admin_user
 from app.api.routes import _can_remove_participant, _check_owner_or_open
+from app.core.config import Settings
 from app.core.security import (
     GoogleIdentity,
     hash_password,
@@ -112,8 +116,6 @@ def test_check_owner_or_open_allows_ownerless_event() -> None:
 
 
 def test_check_owner_or_open_rejects_other_user() -> None:
-    from fastapi import HTTPException
-
     with pytest.raises(HTTPException) as exc_info:
         _check_owner_or_open(_event(owner_id=uuid.uuid4()), _user())
     assert exc_info.value.status_code == 403
@@ -140,3 +142,31 @@ def test_can_remove_participant_event_owner_can_remove_anyone() -> None:
 def test_can_remove_participant_rejects_stranger() -> None:
     event = _event(owner_id=uuid.uuid4())
     assert not _can_remove_participant(event, uuid.uuid4(), _user())
+
+
+def _settings(admin_emails: str = "") -> Settings:
+    return Settings(jwt_secret="test-secret", admin_emails=admin_emails)
+
+
+async def test_get_admin_user_allows_listed_email() -> None:
+    user = User(id=uuid.uuid4(), email="Admin@Example.com", name="A")
+    settings = _settings(admin_emails="admin@example.com")
+    # Comparaison insensible à la casse des deux côtés : un email saisi
+    # différemment dans ADMIN_EMAILS ne doit pas silencieusement exclure
+    # le bon compte.
+    assert await get_admin_user(current_user=user, settings=settings) is user
+
+
+async def test_get_admin_user_rejects_unlisted_email() -> None:
+    settings = _settings(admin_emails="someoneelse@example.com")
+    with pytest.raises(HTTPException) as exc_info:
+        await get_admin_user(current_user=_user(), settings=settings)
+    assert exc_info.value.status_code == 403
+
+
+async def test_get_admin_user_rejects_when_list_empty() -> None:
+    # admin_emails vide = personne n'entre jamais, pas de compte admin
+    # implicite (cf. commentaire sur ce réglage dans config.py).
+    settings = _settings(admin_emails="")
+    with pytest.raises(HTTPException):
+        await get_admin_user(current_user=_user(), settings=settings)

@@ -63,6 +63,7 @@ des variables d'environnement, jamais en dur dans le code.
 | `SOLVE_COOLDOWN_S` | Délai minimum entre deux calculs pour le même (événement, sens) | `20` |
 | `MAX_CONCURRENT_SOLVES` | Nombre de calculs OR-Tools simultanés, par process | `2` |
 | `MAX_SOLUTIONS_KEPT_PER_DIRECTION` | Historique de solutions conservé par (événement, sens) après un move-stop | `20` |
+| `ADMIN_EMAILS` | Emails autorisés à lire `GET /admin/stats`, séparés par des virgules. Vide = personne | (vide) |
 | `NEXT_PUBLIC_API_URL` | Seule URL d'API que le frontend appelle | `http://localhost:8000` |
 
 ## Tests

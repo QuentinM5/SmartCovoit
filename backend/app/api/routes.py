@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TypeVar
 
 import anyio
@@ -21,7 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
 from app.api import schemas
-from app.api.deps import get_current_user, get_db, get_geocoder, get_matrix_provider, get_solve_semaphore
+from app.api.deps import (
+    get_admin_user,
+    get_current_user,
+    get_db,
+    get_geocoder,
+    get_matrix_provider,
+    get_solve_semaphore,
+)
 from app.core.config import Settings, get_settings
 from app.core.security import (
     hash_password,
@@ -29,7 +36,8 @@ from app.core.security import (
     verify_google_id_token,
     verify_password,
 )
-from app.db.models import Driver, Event, Passenger, SolutionRecord, User
+from app.db.event_log import log_event, log_event_now
+from app.db.models import Driver, Event, EventLog, Passenger, SolutionRecord, User
 from app.distance.fallback import FallbackMatrixProvider
 from app.distance.types import Coord, Polyline
 from app.geocoding.nominatim import NominatimClient
@@ -112,6 +120,9 @@ async def login(
     password_hash = user.password_hash if user and user.password_hash else _LOGIN_TIMING_GUARD_HASH
     password_ok = verify_password(body.password, password_hash)
     if user is None or user.password_hash is None or not password_ok:
+        # Ni l'email ni la raison précise dans `props` : ce journal sert à
+        # détecter un pic de tentatives, pas à ficher des adresses email.
+        await log_event_now(db, "auth_login_failed", instance=settings.instance_name)
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect.")
     return schemas.AuthOut(
         token=issue_session_token(user.id, settings.jwt_secret),
@@ -170,12 +181,36 @@ async def get_me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+@router.get("/admin/stats")
+async def admin_stats(
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Compte des faits du journal (events_log) sur 7 jours, groupés par nom
+    et par instance — répond directement à "quelle instance sert le trafic"
+    et "est-ce que des gens utilisent l'appli", sans rien de plus fin qu'un
+    compte (aucune donnée personnelle n'est de toute façon journalisée)."""
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    stmt = (
+        select(EventLog.name, EventLog.instance, func.count())
+        .where(EventLog.created_at >= since)
+        .group_by(EventLog.name, EventLog.instance)
+        .order_by(EventLog.name)
+    )
+    rows = (await db.execute(stmt)).all()
+    return {
+        "since": since.isoformat(),
+        "counts": [{"name": name, "instance": instance, "count": count} for name, instance, count in rows],
+    }
+
+
 @router.post("/events", response_model=schemas.EventOut, status_code=201)
 async def create_event(
     body: schemas.EventCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
+    settings: Settings = Depends(get_settings),
 ) -> Event:
     lat, lon = await _locate_or_422(geocoder, body.depot_address, body.coords)
 
@@ -191,6 +226,7 @@ async def create_event(
         owner_id=current_user.id,
     )
     db.add(event)
+    log_event(db, "event_created", instance=settings.instance_name, event_id=event_id, user_id=current_user.id)
     try:
         await db.commit()
     except IntegrityError:
@@ -274,6 +310,7 @@ async def add_driver(
         if existing is not None and existing.event_id == event_id:
             return existing
     if _participant_cap_reached(await _participant_count(db, event_id), settings.max_participants_per_event):
+        await log_event_now(db, "cap_reached", instance=settings.instance_name, event_id=event_id, role="driver")
         raise HTTPException(
             status_code=422,
             detail=f"Cet événement a atteint son nombre maximum d'inscrits ({settings.max_participants_per_event}).",
@@ -293,6 +330,10 @@ async def add_driver(
         user_id=current_user.id,
     )
     db.add(driver)
+    log_event(
+        db, "participant_added", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, role="driver", direction=body.direction.value,
+    )
     try:
         await db.commit()
     except IntegrityError:
@@ -323,6 +364,7 @@ async def add_passenger(
         if existing is not None and existing.event_id == event_id:
             return existing
     if _participant_cap_reached(await _participant_count(db, event_id), settings.max_participants_per_event):
+        await log_event_now(db, "cap_reached", instance=settings.instance_name, event_id=event_id, role="passenger")
         raise HTTPException(
             status_code=422,
             detail=f"Cet événement a atteint son nombre maximum d'inscrits ({settings.max_participants_per_event}).",
@@ -341,6 +383,10 @@ async def add_passenger(
         user_id=current_user.id,
     )
     db.add(passenger)
+    log_event(
+        db, "participant_added", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, role="passenger", direction=body.direction.value,
+    )
     try:
         await db.commit()
     except IntegrityError:
@@ -360,12 +406,17 @@ async def remove_driver(
     driver_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     driver = await _get_participant_or_404(db, Driver, event_id, driver_id)
     event = await _get_event_or_404(db, event_id)
     if not _can_remove_participant(event, driver.user_id, current_user):
         raise HTTPException(status_code=403, detail="Tu ne peux retirer que ta propre inscription.")
     await db.delete(driver)
+    log_event(
+        db, "participant_removed", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, role="driver",
+    )
     await db.commit()
     return Response(status_code=204)
 
@@ -376,12 +427,17 @@ async def remove_passenger(
     passenger_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     passenger = await _get_participant_or_404(db, Passenger, event_id, passenger_id)
     event = await _get_event_or_404(db, event_id)
     if not _can_remove_participant(event, passenger.user_id, current_user):
         raise HTTPException(status_code=403, detail="Tu ne peux retirer que ta propre inscription.")
     await db.delete(passenger)
+    log_event(
+        db, "participant_removed", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, role="passenger",
+    )
     await db.commit()
     return Response(status_code=204)
 
@@ -416,6 +472,9 @@ async def solve_event(
     )
     wait_s = _seconds_until_next_solve(last_solved_at, datetime.now(timezone.utc), settings.solve_cooldown_s)
     if wait_s > 0:
+        await log_event_now(
+            db, "cap_reached", instance=settings.instance_name, event_id=event_id, reason="solve_cooldown"
+        )
         raise HTTPException(
             status_code=429,
             detail=f"Un calcul vient d'être lancé pour ce trajet. Réessaie dans {round(wait_s)} s.",
@@ -456,6 +515,9 @@ async def solve_event(
         async with solve_semaphore:
             solution = await anyio.to_thread.run_sync(solve, solve_request)
     except SolverError as exc:
+        await log_event_now(
+            db, "solve_failed", instance=settings.instance_name, event_id=event_id, reason=str(exc)
+        )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     driver_uuid_by_str = {str(d.id): d.id for d in drivers}
@@ -508,6 +570,12 @@ async def solve_event(
         payload=jsonable_encoder(routes_out),
     )
     db.add(record)
+    log_event(
+        db, "solve_completed", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, matrix_source=matrix_result.source,
+        fallback_reason=matrix_result.fallback_reason, driver_count=len(drivers),
+        passenger_count=len(passengers), total_distance_m=solution.total_distance_m,
+    )
     await db.commit()
     await db.refresh(record)
 
@@ -703,6 +771,10 @@ async def move_stop(
         if stale.id != new_record.id:
             await db.delete(stale)
 
+    log_event(
+        db, "move_stop", instance=settings.instance_name, event_id=event.id,
+        user_id=current_user.id, driver_id=str(target_driver.id),
+    )
     await db.commit()
     await db.refresh(new_record)
 

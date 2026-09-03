@@ -149,3 +149,4 @@ sitemap, robots.txt) pointe sur ce domaine depuis le déploiement du
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Frontend | Même valeur que `GOOGLE_OAUTH_CLIENT_ID` — exposée au navigateur pour afficher le bouton Google, ce n'est pas un secret |
 | `INSTANCE_NAME` | les deux (optionnel) | `truenas` / `railway` — distincte sur chaque hôte, sinon `/health` et le journal d'événements ne permettent pas de savoir laquelle des deux instances a répondu |
 | `MAX_PARTICIPANTS_PER_EVENT`, `SOLVE_COOLDOWN_S`, `MAX_CONCURRENT_SOLVES`, `MAX_SOLUTIONS_KEPT_PER_DIRECTION` | les deux (optionnels) | Défauts sûrs dans `config.py`, à ajuster seulement si besoin réel constaté |
+| `ADMIN_EMAILS` | les deux (optionnel) | Emails autorisés à lire `GET /admin/stats`, séparés par des virgules — vide = endpoint fermé à tout le monde |

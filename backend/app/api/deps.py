@@ -62,3 +62,14 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status_code=401, detail="Compte introuvable.")
     return user
+
+
+async def get_admin_user(
+    current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> User:
+    """`admin_emails` vide -> personne n'entre jamais ici, pas de compte
+    admin implicite (cf. commentaire sur ce réglage dans config.py)."""
+    if current_user.email.lower() not in settings.admin_emails_list:
+        raise HTTPException(status_code=403, detail="Réservé aux comptes administrateurs.")
+    return current_user
