@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { useAuth } from "@/components/auth-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export function Header({ back = false }: { back?: boolean }) {
+  const { user, loading, logout } = useAuth();
+  const pathname = usePathname();
+
   return (
     <header className="border-b border-line">
       <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-5 py-4">
@@ -12,7 +17,32 @@ export function Header({ back = false }: { back?: boolean }) {
           <span className="text-[15px] font-semibold tracking-tight">SmartCovoit</span>
           {back && <span className="text-sm text-muted">Retour</span>}
         </Link>
-        <ThemeToggle />
+        <div className="flex items-center gap-3">
+          {/* Pendant l'hydratation du jeton stocké, rien n'est affiché plutôt
+              qu'un flash "Se connecter" qui disparaîtrait aussitôt si un
+              compte est en fait déjà connecté. */}
+          {!loading &&
+            (user ? (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="hidden text-muted sm:inline">{user.name}</span>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="text-muted underline-offset-2 transition hover:text-ink hover:underline"
+                >
+                  Se déconnecter
+                </button>
+              </div>
+            ) : (
+              <Link
+                href={`/login?next=${encodeURIComponent(pathname)}`}
+                className="text-sm font-medium text-muted transition hover:text-ink"
+              >
+                Se connecter
+              </Link>
+            ))}
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

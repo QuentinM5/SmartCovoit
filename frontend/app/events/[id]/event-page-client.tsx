@@ -1,17 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Car, Route as RouteIcon, User } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Car, ImagePlus, MessageCircle, Route as RouteIcon, User } from "lucide-react";
 import {
   ApiError,
+  addComment,
   addDriver,
   addPassenger,
+  coverImageUrl,
+  deleteComment,
   deleteDriver,
   deletePassenger,
   getEvent,
   getSolution,
   moveStop,
   solveEvent,
+  uploadCoverImage,
+  type Comment,
   type Direction,
   type Driver,
   type EventDetail,
@@ -19,6 +26,7 @@ import {
   type Route,
   type Solution,
 } from "@/lib/api";
+import { useAuth } from "@/components/auth-provider";
 import { DirectionCheckboxes, DirectionGlyph, DirectionPicker } from "@/components/direction";
 import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
 import { CopyLinkButton } from "@/components/copy-link-button";
@@ -32,6 +40,14 @@ import { formatDistance, formatDuration, resolveStops } from "@/lib/route";
 import { usePassengerDrag, type DragInfo } from "@/lib/use-passenger-drag";
 
 type Role = "driver" | "passenger";
+
+function formatEventDate(isoDate: string): string {
+  // Ajoute un horaire fixe avant de parser : sans ça, `new Date("2026-09-02")`
+  // est interprétée en UTC minuit, qui peut retomber sur la veille une fois
+  // reconvertie dans un fuseau à l'ouest de l'UTC (ex. Amérique).
+  const date = new Date(`${isoDate}T00:00:00`);
+  return date.toLocaleDateString("fr-CA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
 
 function networkMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) return err.message;
@@ -66,6 +82,7 @@ function moveStopOptimistic(solution: Solution, passengerId: string, toDriverId:
 }
 
 export function EventPageClient({ id }: { id: string }) {
+  const { user, loading: authLoading } = useAuth();
   const [event, setEvent] = useState<EventDetail | null>(() => consumeNewEventSeed(id));
   // Capturé une seule fois au montage (useRef n'utilise sa valeur initiale
   // qu'au premier rendu) : sait si cette page vient d'une création tout
@@ -331,6 +348,69 @@ export function EventPageClient({ id }: { id: string }) {
     }
   }
 
+  const [commentError, setCommentError] = useState<string | null>(null);
+
+  /** Optimiste comme le reste de la page : le commentaire apparaît tout de
+   * suite avec un id provisoire, remplacé par la version serveur (ou
+   * retiré en cas d'échec). */
+  async function handleAddComment(body: string): Promise<void> {
+    if (!user) return;
+    setCommentError(null);
+    const tempId = `optimistic-${crypto.randomUUID()}`;
+    const optimistic: Comment = {
+      id: tempId,
+      author_id: user.id,
+      author_name: user.name,
+      body,
+      created_at: new Date().toISOString(),
+    };
+    setEvent((current) => (current ? { ...current, comments: [...current.comments, optimistic] } : current));
+
+    try {
+      const saved = await addComment(id, body);
+      setEvent((current) =>
+        current ? { ...current, comments: current.comments.map((c) => (c.id === tempId ? saved : c)) } : current,
+      );
+    } catch (err) {
+      setEvent((current) =>
+        current ? { ...current, comments: current.comments.filter((c) => c.id !== tempId) } : current,
+      );
+      setCommentError(networkMessage(err, "Le commentaire n'a pas été envoyé. Réessaie."));
+    }
+  }
+
+  async function handleRemoveComment(commentId: string) {
+    setCommentError(null);
+    const removed = event?.comments.find((c) => c.id === commentId);
+    setEvent((current) =>
+      current ? { ...current, comments: current.comments.filter((c) => c.id !== commentId) } : current,
+    );
+    try {
+      await deleteComment(id, commentId);
+    } catch (err) {
+      if (removed) {
+        setEvent((current) => (current ? { ...current, comments: [...current.comments, removed] } : current));
+      }
+      setCommentError(networkMessage(err, "La suppression n'a pas abouti. Réessaie."));
+    }
+  }
+
+  const [coverImageError, setCoverImageError] = useState<string | null>(null);
+  const [uploadingCoverImage, setUploadingCoverImage] = useState(false);
+
+  async function handleUploadCoverImage(file: File) {
+    setCoverImageError(null);
+    setUploadingCoverImage(true);
+    try {
+      await uploadCoverImage(id, file);
+      setEvent((current) => (current ? { ...current, has_cover_image: true } : current));
+    } catch (err) {
+      setCoverImageError(networkMessage(err, "L'image n'a pas pu être envoyée. Réessaie."));
+    } finally {
+      setUploadingCoverImage(false);
+    }
+  }
+
   const viewDrivers = useMemo(
     () => event?.drivers.filter((d) => d.direction === viewDirection) ?? [],
     [event, viewDirection],
@@ -372,6 +452,11 @@ export function EventPageClient({ id }: { id: string }) {
   const dispersion = viewDirection === "dispersion";
   const totalSeats = viewDrivers.reduce((sum, d) => sum + d.seats, 0);
   const seatsLeft = totalSeats - viewPassengers.length;
+  // Calculer/réorganiser les tournées et changer l'image de couverture sont
+  // réservés à l'organisateur — sauf pour un événement créé avant
+  // l'authentification (owner_id nul), resté ouvert à tout compte connecté,
+  // cf. matrice d'autorisation côté backend (routes.py).
+  const canManage = !!user && (event.owner_id === null || event.owner_id === user.id);
 
   return (
     <>
@@ -380,6 +465,14 @@ export function EventPageClient({ id }: { id: string }) {
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-8 sm:py-12">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
           <section>
+            {event.has_cover_image && (
+              // eslint-disable-next-line @next/next/no-img-element -- servie par le backend, pas next/image (cas d'usage trop ponctuel pour justifier l'optimisation).
+              <img
+                src={coverImageUrl(event.id)}
+                alt=""
+                className="mb-4 h-40 w-full rounded-lg border border-line object-cover sm:h-56"
+              />
+            )}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-start gap-4">
                 <DirectionGlyph
@@ -388,7 +481,8 @@ export function EventPageClient({ id }: { id: string }) {
                 />
                 <div className="min-w-0">
                   <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
-                  <p className="mt-1 text-sm text-muted">
+                  <p className="mt-1 text-sm text-muted capitalize">{formatEventDate(event.event_date)}</p>
+                  <p className="mt-0.5 text-sm text-muted">
                     {dispersion ? "Retour depuis" : "Aller vers"}{" "}
                     <span className="text-ink">{event.depot_address}</span>
                   </p>
@@ -396,11 +490,37 @@ export function EventPageClient({ id }: { id: string }) {
               </div>
               <CopyLinkButton className="mt-1" />
             </div>
+            {canManage && (
+              <label className="mt-3 inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink">
+                <ImagePlus className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                {uploadingCoverImage
+                  ? "Envoi…"
+                  : event.has_cover_image
+                    ? "Changer l'image de couverture"
+                    : "Ajouter une image de couverture"}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  disabled={uploadingCoverImage}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void handleUploadCoverImage(file);
+                  }}
+                />
+              </label>
+            )}
+            {coverImageError && <ErrorNote>{coverImageError}</ErrorNote>}
           </section>
 
-          <DirectionPicker value={viewDirection} onChange={handleViewDirectionChange} />
+          {authLoading ? null : user ? (
+            <SignupSection defaultDirection={viewDirection} defaultName={user.name} onAdd={handleAddParticipant} />
+          ) : (
+            <LoginPrompt message="Connecte-toi pour t'inscrire à cet événement." />
+          )}
 
-          <SignupSection defaultDirection={viewDirection} onAdd={handleAddParticipant} />
+          <DirectionPicker value={viewDirection} onChange={handleViewDirectionChange} />
         </div>
 
         <section>
@@ -479,24 +599,44 @@ export function EventPageClient({ id }: { id: string }) {
         </section>
 
         <section className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Button onClick={handleSolve} disabled={solving || viewDrivers.length === 0}>
-              <RouteIcon className="size-4" strokeWidth={1.75} aria-hidden="true" />
-              {solving ? "Calcul…" : solution ? "Recalculer les trajets" : "Calculer les trajets"}
-            </Button>
-            {viewDrivers.length === 0 && (
-              <p className="text-sm text-muted">Il faut au moins un conducteur inscrit sur ce trajet.</p>
-            )}
-          </div>
+          {authLoading ? null : !user ? (
+            <LoginPrompt message="Connecte-toi pour calculer les trajets de cet événement." />
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <Button onClick={handleSolve} disabled={solving || viewDrivers.length === 0 || !canManage}>
+                  <RouteIcon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+                  {solving ? "Calcul…" : solution ? "Recalculer les trajets" : "Calculer les trajets"}
+                </Button>
+                {!canManage ? (
+                  <p className="text-sm text-muted">Seul l&apos;organisateur peut calculer les trajets.</p>
+                ) : (
+                  viewDrivers.length === 0 && (
+                    <p className="text-sm text-muted">Il faut au moins un conducteur inscrit sur ce trajet.</p>
+                  )
+                )}
+              </div>
 
-          {solving && (
-            <div ref={progressRef}>
-              <SolvingProgress driverCount={viewDrivers.length} passengerCount={viewPassengers.length} />
-            </div>
+              {solving && (
+                <div ref={progressRef}>
+                  <SolvingProgress driverCount={viewDrivers.length} passengerCount={viewPassengers.length} />
+                </div>
+              )}
+
+              {solveError && <ErrorNote>{solveError}</ErrorNote>}
+            </>
           )}
-
-          {solveError && <ErrorNote>{solveError}</ErrorNote>}
         </section>
+
+        <CommentsSection
+          comments={event.comments}
+          canPost={!!user}
+          onAdd={handleAddComment}
+          onRemove={handleRemoveComment}
+          canRemoveAny={canManage}
+          currentUserId={user?.id ?? null}
+          error={commentError}
+        />
 
         {solution && event && (
           <section className="flex flex-col gap-4">
@@ -539,7 +679,10 @@ export function EventPageClient({ id }: { id: string }) {
                     durationS={route.duration_s}
                     stops={mapRoutes[index]?.stops ?? []}
                     onHoverChange={(active) => setHighlighted(active ? index : null)}
-                    onPassengerDragStart={startDrag}
+                    // Réservé à l'organisateur côté serveur (move-stop) —
+                    // ne pas proposer un geste voué à échouer à qui ne peut
+                    // pas l'exécuter.
+                    onPassengerDragStart={canManage ? startDrag : undefined}
                     isDropTarget={hoveredDriverId === route.driver_id}
                     draggingPassengerId={drag?.passengerId ?? null}
                     pendingOvercapacity={pendingOvercapacity?.toDriverId === route.driver_id}
@@ -598,6 +741,119 @@ function SourceBanner({ source }: { source: Solution["matrix_source"] }) {
   );
 }
 
+/** Invite à se connecter, avec un lien de retour vers la page courante
+ * (`next`) — même motif que le lien "Se connecter" du Header. */
+function LoginPrompt({ message }: { message: string }) {
+  const pathname = usePathname();
+  const next = encodeURIComponent(pathname);
+  return (
+    <div data-surface className="rounded-lg border border-line bg-surface p-4 text-sm sm:p-5">
+      <p>{message}</p>
+      <div className="mt-3 flex gap-3">
+        <Link
+          href={`/login?next=${next}`}
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition hover:opacity-85"
+        >
+          Se connecter
+        </Link>
+        <Link
+          href={`/signup?next=${next}`}
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium transition hover:border-ink"
+        >
+          Créer un compte
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function CommentsSection({
+  comments,
+  canPost,
+  canRemoveAny,
+  currentUserId,
+  onAdd,
+  onRemove,
+  error,
+}: {
+  comments: Comment[];
+  canPost: boolean;
+  /** L'organisateur peut retirer n'importe quel commentaire, pas seulement
+   * les siens — même règle que pour les inscriptions. */
+  canRemoveAny: boolean;
+  currentUserId: string | null;
+  onAdd: (body: string) => Promise<void>;
+  onRemove: (commentId: string) => void;
+  error: string | null;
+}) {
+  const [body, setBody] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!body.trim() || submitting) return;
+    setSubmitting(true);
+    const toSend = body.trim();
+    setBody("");
+    try {
+      await onAdd(toSend);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+        <MessageCircle className="size-4" strokeWidth={1.75} aria-hidden="true" />
+        Commentaires
+        {comments.length > 0 && <span className="tabular text-muted">· {comments.length}</span>}
+      </h2>
+
+      {comments.length > 0 && (
+        <ul className="flex flex-col gap-3">
+          {comments.map((c) => (
+            <li key={c.id} className="rounded-md border border-line px-3 py-2.5 text-sm">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium">{c.author_name}</span>
+                {(canRemoveAny || c.author_id === currentUserId) && (
+                  <button
+                    type="button"
+                    onClick={() => onRemove(c.id)}
+                    className="text-xs text-muted underline-offset-2 transition hover:text-danger hover:underline"
+                  >
+                    Supprimer
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-muted">{c.body}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {canPost && (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Ajouter un commentaire…"
+            rows={2}
+            className={`${inputClass} resize-y`}
+          />
+          <div>
+            <Button type="submit" variant="quiet" disabled={!body.trim() || submitting}>
+              {submitting ? "Envoi…" : "Commenter"}
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {error && <ErrorNote>{error}</ErrorNote>}
+    </section>
+  );
+}
+
 /**
  * Le conducteur ne « se dépose » pas lui-même : son adresse est un point de
  * son propre trajet (départ ou retour), pas une dépose faite par quelqu'un
@@ -625,9 +881,14 @@ function addressCopy(role: Role, directions: Direction[]): { label: string; hint
 
 function SignupSection({
   defaultDirection,
+  defaultName,
   onAdd,
 }: {
   defaultDirection: Direction;
+  /** Nom du compte connecté — préremplit le champ (modifiable, pour
+   * inscrire quelqu'un d'autre) plutôt que de partir d'un champ vide à
+   * chaque fois. */
+  defaultName: string;
   onAdd: (
     role: Role,
     directions: Direction[],
@@ -636,7 +897,7 @@ function SignupSection({
 }) {
   const [role, setRole] = useState<Role>("passenger");
   const [directions, setDirections] = useState<Direction[]>([defaultDirection]);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(defaultName);
   const [seats, setSeats] = useState(3);
   const [address, setAddress] = useState<AddressValue>({ address: "", lat: null, lon: null });
   const [addressAvailable, setAddressAvailable] = useState(true);
@@ -654,8 +915,10 @@ function SignupSection({
     const entry = { name, seats, address: address.address, lat: address.lat, lon: address.lon };
     // Le formulaire se vide tout de suite : la personne apparaît déjà dans
     // la liste « Inscrits » ci-dessous (mise à jour optimiste côté parent),
-    // pas besoin d'attendre le serveur pour rendre la main.
-    setName("");
+    // pas besoin d'attendre le serveur pour rendre la main. Le nom revient
+    // au nom du compte connecté plutôt qu'un champ vide — le cas courant est
+    // de s'inscrire soi-même, pas d'enchaîner les inscriptions pour d'autres.
+    setName(defaultName);
     setAddress({ address: "", lat: null, lon: null });
     setSeats(3);
 

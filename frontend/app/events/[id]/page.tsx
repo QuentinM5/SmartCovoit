@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { ApiError, getEvent, type EventDetail } from "@/lib/api";
+import { ApiError, coverImageUrl, getEvent, type EventDetail } from "@/lib/api";
 import { EventPageClient } from "./event-page-client";
 
 type Params = { id: string };
@@ -37,7 +37,9 @@ async function getEventForMetadata(id: string): Promise<EventDetail> {
  *
  * `noindex` : ces pages contiennent des noms et adresses de particuliers et
  * ne sont censées circuler que par lien direct, jamais via une recherche —
- * cohérent avec l'absence de compte/auth de l'app (cf. brief).
+ * la lecture reste publique par ce lien même une fois l'authentification en
+ * place, seules les actions d'écriture exigent un compte (cf. matrice
+ * d'autorisation dans routes.py).
  */
 export async function generateMetadata({
   params,
@@ -51,13 +53,16 @@ export async function generateMetadata({
     const driverCount = event.drivers.length;
     const passengerCount = event.passengers.length;
     const description = `Covoiturage « ${event.name} » — ${driverCount} conducteur${driverCount > 1 ? "s" : ""}, ${passengerCount} passager${passengerCount > 1 ? "s" : ""}. Inscris-toi et vois qui prend qui.`;
+    // Absente si l'organisateur n'en a pas mis — un lien partagé sans image
+    // retombe sur l'aperçu par défaut de la plateforme, pas une image cassée.
+    const images = event.has_cover_image ? [coverImageUrl(id)] : undefined;
 
     return {
       title: event.name,
       description,
       alternates: { canonical: `/events/${id}` },
-      openGraph: { title: event.name, description },
-      twitter: { title: event.name, description },
+      openGraph: { title: event.name, description, images },
+      twitter: { title: event.name, description, images },
       robots: { index: false, follow: false },
     };
   } catch (err) {
