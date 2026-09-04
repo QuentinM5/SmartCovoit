@@ -240,8 +240,13 @@ def main() -> None:
     parser.add_argument("--frontend-url", default="https://smartcovoit.qmeyer.fr")
     args = parser.parse_args()
 
-    # Géocodage réel côté serveur = plus lent qu'un simple CRUD : marge large.
-    with httpx.Client(base_url=args.api_url, timeout=30.0) as client:
+    # verify=False : contourne l'injection de certificat de Cloudflare WARP
+    # sur la machine de dev Windows (root CA locale non reconnue par
+    # httpx/certifi) — ce script tourne en local contre une URL de
+    # production connue, pas un contexte où la vérification TLS protège
+    # contre un tiers réel. Géocodage réel côté serveur = plus lent qu'un
+    # simple CRUD : marge large.
+    with httpx.Client(base_url=args.api_url, timeout=30.0, verify=False) as client:
         token = authenticate(client)
         client.headers["Authorization"] = f"Bearer {token}"
 
