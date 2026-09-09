@@ -202,7 +202,10 @@ export function EventPageClient({ id }: { id: string }) {
           lat: data.lat ?? 0,
           lon: data.lon ?? 0,
           direction,
-          user_id: user?.id ?? null,
+          // Toujours vrai : c'est le compte qui vient de créer cette
+          // inscription, il peut forcément la modifier — cf. can_edit côté
+          // serveur, remplacé une fois `refresh()` posé.
+          can_edit: true,
         }));
         return { ...current, drivers: [...current.drivers, ...optimisticDrivers] };
       }
@@ -213,7 +216,7 @@ export function EventPageClient({ id }: { id: string }) {
         lat: data.lat ?? 0,
         lon: data.lon ?? 0,
         direction,
-        user_id: user?.id ?? null,
+        can_edit: true,
       }));
       return { ...current, passengers: [...current.passengers, ...optimisticPassengers] };
     });
@@ -352,22 +355,6 @@ export function EventPageClient({ id }: { id: string }) {
   }
 
   /**
-   * Même règle d'autorisation que côté serveur (`_can_remove_participant`) :
-   * la personne elle-même, une inscription orpheline, ou l'organisateur.
-   * Recalculée ici plutôt qu'exposée par l'API pour ne pas dupliquer un
-   * aller-retour réseau par ligne de la liste.
-   */
-  function canEditParticipant(participantUserId: string | null): boolean {
-    if (!user || !event) return false;
-    return (
-      participantUserId === user.id ||
-      participantUserId === null ||
-      event.owner_id === null ||
-      event.owner_id === user.id
-    );
-  }
-
-  /**
    * Même patron optimiste que `handleRemove` : on applique tout de suite,
    * on annule uniquement la ligne concernée en cas d'échec. `refresh()` en
    * fin de succès récupère l'état canonique — nécessaire si l'adresse a
@@ -502,7 +489,6 @@ export function EventPageClient({ id }: { id: string }) {
           passengers={viewPassengers}
           seatsLeft={seatsLeft}
           error={rosterError}
-          canEdit={canEditParticipant}
           onRemove={handleRemove}
           onUpdate={handleUpdateParticipant}
         />

@@ -64,6 +64,27 @@ async def get_current_user(
     return user
 
 
+async def get_optional_user(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> User | None:
+    """Comme `get_current_user`, mais renvoie `None` plutôt que 401 quand
+    l'en-tête est absent, malformé, ou le jeton invalide/expiré — pour un
+    endpoint public (`GET /events/{id}`) qui a seulement besoin de savoir
+    QUI regarde quand quelqu'un est connecté, sans jamais l'exiger. Un jeton
+    périmé ne doit pas casser la consultation d'un événement partagé par
+    lien."""
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    try:
+        user_id = verify_session_token(token, settings.jwt_secret)
+    except jwt.InvalidTokenError:
+        return None
+    return await db.get(User, user_id)
+
+
 async def get_admin_user(
     current_user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),

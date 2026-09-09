@@ -160,11 +160,12 @@ class DriverOut(BaseModel):
     lat: float
     lon: float
     direction: Direction
-    # Nul pour les inscriptions faites avant l'authentification. Exposé pour
-    # que le frontend sache qui peut modifier cette ligne (cf.
-    # `_can_remove_participant`) sans avoir à deviner ou tenter un appel voué
-    # à échouer.
-    user_id: uuid.UUID | None = None
+    # Calculé côté serveur (cf. `_can_remove_participant`) plutôt que
+    # d'exposer `user_id` tel quel : ce dernier relierait publiquement un nom
+    # affiché à un identifiant de compte, alors que `GET /events/{id}` est
+    # accessible sans authentification. Le frontend n'a besoin que du
+    # résultat (peut-il proposer le crayon d'édition ?), jamais de l'id.
+    can_edit: bool = False
 
 
 class DriverUpdate(Located):
@@ -192,7 +193,7 @@ class PassengerOut(BaseModel):
     lat: float
     lon: float
     direction: Direction
-    user_id: uuid.UUID | None = None
+    can_edit: bool = False
 
 
 class PassengerUpdate(Located):

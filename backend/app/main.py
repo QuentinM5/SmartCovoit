@@ -59,10 +59,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     settings = get_settings()
 
+    # docs_url/redoc_url/openapi_url à None : évite d'exposer publiquement la
+    # liste complète des endpoints et des schémas (cf. Settings.enable_api_docs).
+    # Le frontend est le seul client prévu, il n'en a pas besoin.
+    docs_kwargs = (
+        {}
+        if settings.enable_api_docs
+        else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    )
+
     app = FastAPI(
         title="SmartCovoit API",
         description="Solveur de covoiturage optimisé pour événements de groupe.",
         lifespan=lifespan,
+        **docs_kwargs,
     )
 
     app.add_middleware(

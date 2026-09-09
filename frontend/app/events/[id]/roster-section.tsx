@@ -21,7 +21,6 @@ export function RosterSection({
   passengers,
   seatsLeft,
   error,
-  canEdit,
   onRemove,
   onUpdate,
 }: {
@@ -30,10 +29,6 @@ export function RosterSection({
   /** Négatif = surcapacité (plus de passagers que de places offertes). */
   seatsLeft: number;
   error: string | null;
-  /** Cf. `_can_remove_participant` côté backend : la personne elle-même, une
-   * inscription orpheline, ou l'organisateur — même règle pour modifier que
-   * pour retirer, qui peut faire l'un peut faire l'autre. */
-  canEdit: (participantUserId: string | null) => boolean;
   onRemove: (kind: Role, participantId: string) => void;
   onUpdate: (kind: Role, participantId: string, data: ParticipantUpdate) => Promise<void>;
 }) {
@@ -73,7 +68,7 @@ export function RosterSection({
                 {drivers.map((d) => (
                   <RosterRow
                     key={d.id}
-                    editable={canEdit(d.user_id)}
+                    editable={d.can_edit}
                     onRemove={() => onRemove("driver", d.id)}
                     render={(editing, startEdit) =>
                       editing ? (
@@ -113,7 +108,7 @@ export function RosterSection({
                 {passengers.map((p) => (
                   <RosterRow
                     key={p.id}
-                    editable={canEdit(p.user_id)}
+                    editable={p.can_edit}
                     onRemove={() => onRemove("passenger", p.id)}
                     render={(editing, startEdit) =>
                       editing ? (

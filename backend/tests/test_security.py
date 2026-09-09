@@ -15,7 +15,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.deps import get_admin_user
-from app.api.routes import _can_remove_participant, _check_owner_or_open
+from app.api.routes import _can_remove_participant, _check_owner_or_open, _driver_out, _email_fingerprint, _passenger_out
 from app.core.config import Settings
 from app.core.security import (
     GoogleIdentity,
@@ -25,7 +25,7 @@ from app.core.security import (
     verify_password,
     verify_session_token,
 )
-from app.db.models import Event, User
+from app.db.models import Driver, Event, Passenger, User
 
 SECRET = "test-secret"
 
@@ -126,12 +126,19 @@ def test_can_remove_participant_own_row() -> None:
     assert _can_remove_participant(_event(owner_id=uuid.uuid4()), user.id, user)
 
 
-def test_can_remove_participant_ownerless_row() -> None:
-    assert _can_remove_participant(_event(owner_id=uuid.uuid4()), None, _user())
+def test_can_remove_participant_orphan_row_owner_can_still_manage() -> None:
+    # Une inscription faite hors API (sans user_id connu, ex. import direct
+    # en base) reste gérable par l'organisateur de l'événement.
+    owner = _user()
+    assert _can_remove_participant(_event(owner_id=owner.id), None, owner)
 
 
-def test_can_remove_participant_ownerless_event() -> None:
-    assert _can_remove_participant(_event(owner_id=None), uuid.uuid4(), _user())
+def test_can_remove_participant_orphan_row_rejects_stranger() -> None:
+    # Contrairement à avant (cf. M8 de l'audit sécurité), une inscription
+    # orpheline (user_id nul) n'est plus modifiable par n'importe quel compte
+    # connecté — seul l'organisateur peut encore la gérer (test ci-dessus).
+    event = _event(owner_id=uuid.uuid4())
+    assert not _can_remove_participant(event, None, _user())
 
 
 def test_can_remove_participant_event_owner_can_remove_anyone() -> None:
@@ -142,6 +149,63 @@ def test_can_remove_participant_event_owner_can_remove_anyone() -> None:
 def test_can_remove_participant_rejects_stranger() -> None:
     event = _event(owner_id=uuid.uuid4())
     assert not _can_remove_participant(event, uuid.uuid4(), _user())
+
+
+def _driver(user_id: uuid.UUID | None) -> Driver:
+    return Driver(
+        id=uuid.uuid4(), event_id=uuid.uuid4(), direction="ramassage", name="D", seats=4,
+        address="", lat=0, lon=0, user_id=user_id,
+    )
+
+
+def _passenger(user_id: uuid.UUID | None) -> Passenger:
+    return Passenger(
+        id=uuid.uuid4(), event_id=uuid.uuid4(), direction="ramassage", name="P",
+        address="", lat=0, lon=0, user_id=user_id,
+    )
+
+
+def test_driver_out_hides_user_id_and_exposes_can_edit() -> None:
+    # M7 de l'audit sécurité : DriverOut ne doit plus jamais transporter
+    # user_id, un visiteur anonyme (current_user=None) reçoit can_edit=False.
+    driver = _driver(user_id=uuid.uuid4())
+    out = _driver_out(driver, _event(owner_id=uuid.uuid4()), current_user=None)
+    assert not hasattr(out, "user_id")
+    assert out.can_edit is False
+
+
+def test_driver_out_can_edit_true_for_owner() -> None:
+    owner = _user()
+    driver = _driver(user_id=uuid.uuid4())
+    out = _driver_out(driver, _event(owner_id=owner.id), current_user=owner)
+    assert out.can_edit is True
+
+
+def test_passenger_out_can_edit_true_for_self() -> None:
+    passenger_user = _user()
+    passenger = _passenger(user_id=passenger_user.id)
+    out = _passenger_out(passenger, _event(owner_id=uuid.uuid4()), current_user=passenger_user)
+    assert out.can_edit is True
+
+
+def test_passenger_out_can_edit_false_for_stranger() -> None:
+    passenger = _passenger(user_id=uuid.uuid4())
+    out = _passenger_out(passenger, _event(owner_id=uuid.uuid4()), current_user=_user())
+    assert out.can_edit is False
+
+
+def test_email_fingerprint_stable_and_case_insensitive() -> None:
+    assert _email_fingerprint("Alice@Example.com", "s") == _email_fingerprint("alice@example.com ", "s")
+
+
+def test_email_fingerprint_differs_per_secret() -> None:
+    # Ne dépend pas d'un secret dédié : elle doit quand même varier avec le
+    # secret pour ne pas être devinable hors contexte de l'application.
+    assert _email_fingerprint("alice@example.com", "s1") != _email_fingerprint("alice@example.com", "s2")
+
+
+def test_email_fingerprint_differs_per_email() -> None:
+    assert _email_fingerprint("alice@example.com", "s") != _email_fingerprint("bob@example.com", "s")
 
 
 def _settings(admin_emails: str = "") -> Settings:

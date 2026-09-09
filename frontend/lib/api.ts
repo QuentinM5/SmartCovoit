@@ -61,9 +61,10 @@ export interface Driver {
   lat: number;
   lon: number;
   direction: Direction;
-  /** Nul pour les inscriptions faites avant l'authentification — sert à
-   * décider qui peut modifier cette ligne (cf. roster-section.tsx). */
-  user_id: string | null;
+  /** Calculé côté serveur (cf. `_can_remove_participant`) : jamais l'id du
+   * compte propriétaire lui-même, qui n'a pas à être public sur un endpoint
+   * accessible sans authentification. */
+  can_edit: boolean;
 }
 
 export interface Passenger {
@@ -73,7 +74,7 @@ export interface Passenger {
   lat: number;
   lon: number;
   direction: Direction;
-  user_id: string | null;
+  can_edit: boolean;
 }
 
 export interface EventDetail extends EventOut {

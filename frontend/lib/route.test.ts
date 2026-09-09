@@ -44,7 +44,7 @@ describe("resolveStops", () => {
 
   it("résout un arrêt passager en cherchant le passager par id", () => {
     const event = baseEvent({
-      passengers: [{ id: "p1", name: "Bob", address: "2 rue B", lat: 1, lon: 2, direction: "ramassage", user_id: null }],
+      passengers: [{ id: "p1", name: "Bob", address: "2 rue B", lat: 1, lon: 2, direction: "ramassage", can_edit: false }],
     });
     const route: Route = {
       driver_id: "d1",
@@ -78,7 +78,7 @@ describe("resolveStops", () => {
       lat: 1,
       lon: 2,
       direction: "dispersion" as const,
-      user_id: null,
+      can_edit: false,
     };
     const event = baseEvent({ drivers: [driver] });
     const route: Route = {

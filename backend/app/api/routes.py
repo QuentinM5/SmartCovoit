@@ -8,6 +8,8 @@ inscriptions déjà faites sans dépendre d'un état client volatile.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import TypeVar
@@ -27,6 +29,7 @@ from app.api.deps import (
     get_db,
     get_geocoder,
     get_matrix_provider,
+    get_optional_user,
     get_solve_semaphore,
 )
 from app.core.config import Settings, get_settings
@@ -51,12 +54,35 @@ router = APIRouter()
 MAX_COVER_IMAGE_BYTES = 3 * 1024 * 1024
 ALLOWED_COVER_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
+
+def _matches_declared_image_type(data: bytes, content_type: str) -> bool:
+    """Vérifie les octets magiques plutôt que de faire confiance à
+    `Content-Type`, qui n'est qu'une déclaration du client — sans ça, un
+    appelant peut envoyer n'importe quel contenu étiqueté `image/png`."""
+    if content_type == "image/jpeg":
+        return data[:3] == b"\xff\xd8\xff"
+    if content_type == "image/png":
+        return data[:8] == b"\x89PNG\r\n\x1a\n"
+    if content_type == "image/webp":
+        return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    return False
+
 # Vérifié systématiquement même quand l'email n'existe pas ou n'a pas de mot
 # de passe (cf. login ci-dessous) : sans ça, l'absence de hachage bcrypt
 # (~100-300ms) rend la réponse mesurablement plus rapide pour un email
 # inconnu que pour un mot de passe simplement faux — une énumération de
 # comptes par le temps de réponse, pas par le contenu de l'erreur.
 _LOGIN_TIMING_GUARD_HASH = hash_password("smartcovoit-timing-guard-not-a-real-account")
+
+
+def _email_fingerprint(email: str, secret: str) -> str:
+    """Empreinte HMAC d'un email, pour compter les échecs de connexion par
+    compte (cf. login) sans jamais stocker l'adresse elle-même dans le
+    journal — `props` est journalisé sans donnée personnelle ailleurs dans
+    cette base (cf. app.db.models.EventLog), pas de raison de commencer ici.
+    `secret` = jwt_secret : déjà un secret applicatif existant, pas la peine
+    d'en gérer un second rien que pour ça."""
+    return hmac.new(secret.encode("utf-8"), email.strip().lower().encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 @router.get("/health")
@@ -111,6 +137,29 @@ async def login(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> schemas.AuthOut:
+    email_fp = _email_fingerprint(body.email, settings.jwt_secret)
+    since_lockout = datetime.now(timezone.utc) - timedelta(minutes=settings.login_lockout_window_minutes)
+    # `props['email_fp'].astext` : `props` est une colonne JSONB, l'égalité
+    # directe sur une valeur JSON exige un cast explicite en texte côté
+    # Postgres, sinon la comparaison ne matche jamais.
+    recent_failures = await db.scalar(
+        select(func.count())
+        .select_from(EventLog)
+        .where(
+            EventLog.name == "auth_login_failed",
+            EventLog.created_at >= since_lockout,
+            EventLog.props["email_fp"].astext == email_fp,
+        )
+    )
+    if (recent_failures or 0) >= settings.login_lockout_max_attempts:
+        # Pas de hachage bcrypt ici : le compte est déjà verrouillé pour la
+        # fenêtre en cours, inutile de payer le coût du calcul pour un essai
+        # qui échouera de toute façon.
+        raise HTTPException(
+            status_code=429,
+            detail="Trop de tentatives échouées pour ce compte. Réessaie plus tard.",
+        )
+
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     # Le hachage est vérifié dans tous les cas, y compris email inconnu ou
@@ -120,9 +169,10 @@ async def login(
     password_hash = user.password_hash if user and user.password_hash else _LOGIN_TIMING_GUARD_HASH
     password_ok = verify_password(body.password, password_hash)
     if user is None or user.password_hash is None or not password_ok:
-        # Ni l'email ni la raison précise dans `props` : ce journal sert à
-        # détecter un pic de tentatives, pas à ficher des adresses email.
-        await log_event_now(db, "auth_login_failed", instance=settings.instance_name)
+        # `email_fp` (empreinte HMAC, pas l'email en clair) permet de compter
+        # les échecs par compte pour le verrou ci-dessus, sans ficher
+        # d'adresse email lisible dans le journal.
+        await log_event_now(db, "auth_login_failed", instance=settings.instance_name, email_fp=email_fp)
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect.")
     return schemas.AuthOut(
         token=issue_session_token(user.id, settings.jwt_secret),
@@ -294,8 +344,17 @@ async def list_my_events(
 
 
 @router.get("/events/{event_id}", response_model=schemas.EventDetailOut)
-async def get_event(event_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Event:
-    return await _load_event_with_participants(db, event_id)
+async def get_event(
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+) -> schemas.EventDetailOut:
+    event = await _load_event_with_participants(db, event_id)
+    return schemas.EventDetailOut(
+        **schemas.EventOut.model_validate(event).model_dump(),
+        drivers=[_driver_out(d, event, current_user) for d in event.drivers],
+        passengers=[_passenger_out(p, event, current_user) for p in event.passengers],
+    )
 
 
 @router.patch("/events/{event_id}", response_model=schemas.EventOut)
@@ -372,9 +431,23 @@ async def upload_cover_image(
         raise HTTPException(
             status_code=422, detail="Format d'image non pris en charge (jpeg, png ou webp uniquement)."
         )
-    data = await file.read()
-    if len(data) > MAX_COVER_IMAGE_BYTES:
-        raise HTTPException(status_code=422, detail="Image trop volumineuse (3 Mo maximum).")
+
+    # Lu par blocs plutôt que `await file.read()` d'un coup : la taille n'est
+    # sinon vérifiée qu'après avoir déjà tout chargé en mémoire, ce qui rend
+    # la limite ci-dessous inopérante contre un envoi volontairement énorme.
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(1024 * 1024):
+        total += len(chunk)
+        if total > MAX_COVER_IMAGE_BYTES:
+            raise HTTPException(status_code=422, detail="Image trop volumineuse (3 Mo maximum).")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+
+    if not _matches_declared_image_type(data, file.content_type):
+        raise HTTPException(
+            status_code=422, detail="Le contenu du fichier ne correspond pas au type d'image déclaré."
+        )
 
     event.cover_image = data
     event.cover_image_content_type = file.content_type
@@ -424,8 +497,8 @@ async def add_driver(
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
     settings: Settings = Depends(get_settings),
-) -> Driver:
-    await _get_event_or_404(db, event_id)
+) -> schemas.DriverOut:
+    event = await _get_event_or_404(db, event_id)
     if body.id is not None:
         # Rejeu d'un POST déjà appliqué (cf. failover-policy.ts) : on renvoie
         # la ligne existante avant même de vérifier le plafond, sinon un
@@ -433,7 +506,7 @@ async def add_driver(
         # propre dernière inscription réussie.
         existing = await db.get(Driver, body.id)
         if existing is not None and existing.event_id == event_id:
-            return existing
+            return _driver_out(existing, event, current_user)
     if _participant_cap_reached(
         await _participant_count(db, event_id, body.direction), settings.max_participants_per_event
     ):
@@ -470,10 +543,10 @@ async def add_driver(
         await db.rollback()
         existing = await db.get(Driver, driver_id)
         if existing is not None:
-            return existing
+            return _driver_out(existing, event, current_user)
         raise
     await db.refresh(driver)
-    return driver
+    return _driver_out(driver, event, current_user)
 
 
 @router.post("/events/{event_id}/passengers", response_model=schemas.PassengerOut, status_code=201)
@@ -484,12 +557,12 @@ async def add_passenger(
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
     settings: Settings = Depends(get_settings),
-) -> Passenger:
-    await _get_event_or_404(db, event_id)
+) -> schemas.PassengerOut:
+    event = await _get_event_or_404(db, event_id)
     if body.id is not None:
         existing = await db.get(Passenger, body.id)
         if existing is not None and existing.event_id == event_id:
-            return existing
+            return _passenger_out(existing, event, current_user)
     if _participant_cap_reached(
         await _participant_count(db, event_id, body.direction), settings.max_participants_per_event
     ):
@@ -523,10 +596,10 @@ async def add_passenger(
         await db.rollback()
         existing = await db.get(Passenger, passenger_id)
         if existing is not None:
-            return existing
+            return _passenger_out(existing, event, current_user)
         raise
     await db.refresh(passenger)
-    return passenger
+    return _passenger_out(passenger, event, current_user)
 
 
 @router.patch("/events/{event_id}/drivers/{driver_id}", response_model=schemas.DriverOut)
@@ -538,7 +611,7 @@ async def update_driver(
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
     settings: Settings = Depends(get_settings),
-) -> Driver:
+) -> schemas.DriverOut:
     driver = await _get_participant_or_404(db, Driver, event_id, driver_id)
     event = await _get_event_or_404(db, event_id)
     # Même règle que pour retirer une inscription : qui peut supprimer puis
@@ -573,7 +646,7 @@ async def update_driver(
     )
     await db.commit()
     await db.refresh(driver)
-    return driver
+    return _driver_out(driver, event, current_user)
 
 
 @router.patch("/events/{event_id}/passengers/{passenger_id}", response_model=schemas.PassengerOut)
@@ -585,7 +658,7 @@ async def update_passenger(
     db: AsyncSession = Depends(get_db),
     geocoder: NominatimClient = Depends(get_geocoder),
     settings: Settings = Depends(get_settings),
-) -> Passenger:
+) -> schemas.PassengerOut:
     passenger = await _get_participant_or_404(db, Passenger, event_id, passenger_id)
     event = await _get_event_or_404(db, event_id)
     if not _can_remove_participant(event, passenger.user_id, current_user):
@@ -616,7 +689,7 @@ async def update_passenger(
     )
     await db.commit()
     await db.refresh(passenger)
-    return passenger
+    return _passenger_out(passenger, event, current_user)
 
 
 @router.delete("/events/{event_id}/drivers/{driver_id}", status_code=204, response_class=Response)
@@ -701,6 +774,32 @@ async def solve_event(
             detail=f"Un calcul vient d'être lancé pour ce trajet. Réessaie dans {round(wait_s)} s.",
             headers={"Retry-After": str(round(wait_s))},
         )
+
+    # Budget quotidien par compte (cf. Settings.max_solves_per_user_per_day) :
+    # le cooldown ci-dessus protège UN (événement, sens) contre un double
+    # clic, pas un compte qui enchaînerait les calculs sur plusieurs
+    # événements. Compté sur "solve_attempted" (posé juste en dessous, avant
+    # l'appel à la matrice) plutôt que sur "solve_completed" : c'est l'appel
+    # à la matrice qui coûte, pas seulement un calcul qui aboutit.
+    since_budget = datetime.now(timezone.utc) - timedelta(days=1)
+    attempts_today = await db.scalar(
+        select(func.count())
+        .select_from(EventLog)
+        .where(
+            EventLog.user_id == current_user.id,
+            EventLog.name == "solve_attempted",
+            EventLog.created_at >= since_budget,
+        )
+    )
+    if (attempts_today or 0) >= settings.max_solves_per_user_per_day:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Tu as atteint la limite de {settings.max_solves_per_user_per_day} "
+                "calculs de trajet aujourd'hui. Réessaie demain."
+            ),
+        )
+    await log_event_now(db, "solve_attempted", instance=settings.instance_name, event_id=event_id, user_id=current_user.id)
 
     coords = [Coord(event.depot_lat, event.depot_lon)]
     coords += [Coord(d.lat, d.lon) for d in drivers]
@@ -1074,14 +1173,38 @@ def _check_owner_or_open(event: Event, current_user: User) -> None:
 
 
 def _can_remove_participant(event: Event, participant_user_id: uuid.UUID | None, current_user: User) -> bool:
-    """Cf. matrice d'autorisation du plan : la personne elle-même, une
-    ancienne inscription sans propriétaire connu, un événement sans
-    organisateur connu, ou l'organisateur lui-même."""
-    return (
-        participant_user_id == current_user.id
-        or participant_user_id is None
-        or event.owner_id is None
-        or event.owner_id == current_user.id
+    """Cf. matrice d'autorisation du plan : la personne elle-même, ou
+    l'organisateur de l'événement."""
+    return participant_user_id == current_user.id or event.owner_id == current_user.id
+
+
+def _driver_out(driver: Driver, event: Event, current_user: User | None) -> schemas.DriverOut:
+    """Construit la réponse publique d'un conducteur : `can_edit` remplace
+    `user_id` brut (cf. schemas.DriverOut) pour ne jamais publier le lien
+    entre un nom affiché et un identifiant de compte sur cet endpoint public.
+    `current_user` absent (visiteur non connecté) -> toujours `False`, sans
+    appeler `_can_remove_participant` qui exige un compte réel."""
+    return schemas.DriverOut(
+        id=driver.id,
+        name=driver.name,
+        seats=driver.seats,
+        address=driver.address,
+        lat=driver.lat,
+        lon=driver.lon,
+        direction=driver.direction,
+        can_edit=current_user is not None and _can_remove_participant(event, driver.user_id, current_user),
+    )
+
+
+def _passenger_out(passenger: Passenger, event: Event, current_user: User | None) -> schemas.PassengerOut:
+    return schemas.PassengerOut(
+        id=passenger.id,
+        name=passenger.name,
+        address=passenger.address,
+        lat=passenger.lat,
+        lon=passenger.lon,
+        direction=passenger.direction,
+        can_edit=current_user is not None and _can_remove_participant(event, passenger.user_id, current_user),
     )
 
 

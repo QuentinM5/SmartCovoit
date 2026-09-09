@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth-provider";
 import { TelemetryProvider } from "@/components/telemetry-provider";
@@ -54,11 +55,15 @@ const themeScript = `
 })();
 `;
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Posé par middleware.ts (un par requête) : sans lui, la CSP bloquerait ce
+  // script comme n'importe quel autre inline non listé explicitement.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     <html lang="fr" className={`${plexSans.variable} ${plexMono.variable} h-full`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-full font-sans antialiased">
         <TelemetryProvider />

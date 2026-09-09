@@ -75,64 +75,80 @@ function describe(request: Request): string {
   return `${request.method} ${new URL(request.url).pathname}`;
 }
 
+/** Défense en profondeur (cf. audit sécurité, point G3) : une API JSON n'a
+ * pas besoin d'une CSP, mais `nosniff` empêche un navigateur de réinterpréter
+ * une réponse (ex. l'image de couverture) comme un autre type de contenu que
+ * celui déclaré. La réponse d'origine (backend ou secours) reste inchangée,
+ * seuls ces deux en-têtes sont ajoutés par-dessus. */
+function withSecurityHeaders(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const bucket = pickRateLimitBucket(url.pathname, request.method);
+  if (bucket) {
+    // CF-Connecting-IP posée par Cloudflare à l'edge, jamais falsifiable
+    // par le client contrairement à X-Forwarded-For.
+    const ip = request.headers.get("CF-Connecting-IP") ?? "inconnue";
+    const limiter = bucket === "auth" ? env.AUTH_RATE_LIMIT : env.WRITE_RATE_LIMIT;
+    const { success } = await limiter.limit({ key: ip });
+    if (!success) {
+      return new Response("Trop de requêtes. Réessaie dans une minute.", {
+        status: 429,
+        headers: { "Retry-After": "60" },
+      });
+    }
+  }
+
+  const timeoutMs = Number(env.REQUEST_TIMEOUT_MS) || 25000;
+
+  // `request.clone()` avant la première tentative : le corps d'une requête
+  // (POST /events, /drivers, /passengers...) ne se lit qu'une fois. Sans
+  // ça, un échec du primaire APRÈS lecture partielle du corps rendrait la
+  // requête de repli invalide.
+  const fallbackRequest = request.clone();
+
+  try {
+    return await proxyWithTimeout(env.PRIMARY_API_URL, request, timeoutMs);
+  } catch (err) {
+    const kind: FailureKind = err instanceof PrimaryServerError ? "server-error" : "transport";
+
+    if (!shouldReplay(request.method, kind)) {
+      // Un 5xx sur une écriture : le primaire a probablement déjà traité
+      // la requête, on renvoie sa réponse telle quelle plutôt que de
+      // risquer un doublon sur le secours.
+      console.warn(`[failover] pas de rejeu (${kind}) pour ${describe(request)}`);
+      if (err instanceof PrimaryServerError) return err.response;
+      return new Response("Le backend primaire est indisponible.", { status: 503 });
+    }
+
+    console.warn(
+      `[failover] bascule vers le secours (${kind}) pour ${describe(request)} :`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  try {
+    const response = await proxy(env.FALLBACK_API_URL, fallbackRequest);
+    if (response.status >= 500) {
+      console.warn(`[failover] le secours répond ${response.status} pour ${describe(request)}`);
+    }
+    return response;
+  } catch (err) {
+    console.warn(
+      `[failover] secours injoignable pour ${describe(request)} :`,
+      err instanceof Error ? err.message : err,
+    );
+    return new Response("Les deux instances backend sont indisponibles.", { status: 502 });
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const bucket = pickRateLimitBucket(url.pathname, request.method);
-    if (bucket) {
-      // CF-Connecting-IP posée par Cloudflare à l'edge, jamais falsifiable
-      // par le client contrairement à X-Forwarded-For.
-      const ip = request.headers.get("CF-Connecting-IP") ?? "inconnue";
-      const limiter = bucket === "auth" ? env.AUTH_RATE_LIMIT : env.WRITE_RATE_LIMIT;
-      const { success } = await limiter.limit({ key: ip });
-      if (!success) {
-        return new Response("Trop de requêtes. Réessaie dans une minute.", {
-          status: 429,
-          headers: { "Retry-After": "60" },
-        });
-      }
-    }
-
-    const timeoutMs = Number(env.REQUEST_TIMEOUT_MS) || 25000;
-
-    // `request.clone()` avant la première tentative : le corps d'une requête
-    // (POST /events, /drivers, /passengers...) ne se lit qu'une fois. Sans
-    // ça, un échec du primaire APRÈS lecture partielle du corps rendrait la
-    // requête de repli invalide.
-    const fallbackRequest = request.clone();
-
-    try {
-      return await proxyWithTimeout(env.PRIMARY_API_URL, request, timeoutMs);
-    } catch (err) {
-      const kind: FailureKind = err instanceof PrimaryServerError ? "server-error" : "transport";
-
-      if (!shouldReplay(request.method, kind)) {
-        // Un 5xx sur une écriture : le primaire a probablement déjà traité
-        // la requête, on renvoie sa réponse telle quelle plutôt que de
-        // risquer un doublon sur le secours.
-        console.warn(`[failover] pas de rejeu (${kind}) pour ${describe(request)}`);
-        if (err instanceof PrimaryServerError) return err.response;
-        return new Response("Le backend primaire est indisponible.", { status: 503 });
-      }
-
-      console.warn(
-        `[failover] bascule vers le secours (${kind}) pour ${describe(request)} :`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-
-    try {
-      const response = await proxy(env.FALLBACK_API_URL, fallbackRequest);
-      if (response.status >= 500) {
-        console.warn(`[failover] le secours répond ${response.status} pour ${describe(request)}`);
-      }
-      return response;
-    } catch (err) {
-      console.warn(
-        `[failover] secours injoignable pour ${describe(request)} :`,
-        err instanceof Error ? err.message : err,
-      );
-      return new Response("Les deux instances backend sont indisponibles.", { status: 502 });
-    }
+    return withSecurityHeaders(await handle(request, env));
   },
 } satisfies ExportedHandler<Env>;

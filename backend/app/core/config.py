@@ -68,6 +68,29 @@ class Settings(BaseSettings):
     # clic sans gêner un usage normal.
     solve_cooldown_s: int = 20
 
+    # Budget quotidien par compte sur /solve, en plus du cooldown ci-dessus :
+    # le cooldown protège contre un double clic sur UN événement, pas contre
+    # un compte qui enchaînerait les calculs sur plusieurs événements (dont
+    # potentiellement les siens propres, créés pour l'occasion). 5 couvre
+    # largement un usage réel (un événement se recalcule rarement plus de
+    # 2-3 fois) tout en bornant le coût maximal par compte et par jour.
+    max_solves_per_user_per_day: int = 5
+
+    # Bourrage d'identifiants sur /auth/login : au-delà de ce nombre
+    # d'échecs pour le même email dans la fenêtre ci-dessous, les tentatives
+    # suivantes sont bloquées sans même vérifier le mot de passe. Généreux
+    # (10 en 15 minutes) pour ne jamais gêner un compte qui tape juste mal
+    # son mot de passe deux ou trois fois.
+    login_lockout_max_attempts: int = 10
+    login_lockout_window_minutes: int = 15
+
+    # FastAPI monte /docs, /redoc et /openapi.json par défaut : utile en
+    # développement, mais ça donne à quiconque la carte complète des
+    # endpoints et des schémas en production, sans aucun bénéfice pour les
+    # utilisateurs réels (le frontend est le seul client prévu). Fermé par
+    # défaut, à activer explicitement en local si besoin.
+    enable_api_docs: bool = False
+
     # Borne le nombre de threads CPU-bound simultanés (OR-Tools tourne hors
     # de la boucle d'événements via anyio.to_thread) — limite par process,
     # même logique assumée que le rate-limiter Nominatim (1 req/s "par
