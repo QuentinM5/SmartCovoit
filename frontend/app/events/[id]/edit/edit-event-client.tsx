@@ -85,7 +85,7 @@ export function EditEventClient({ id }: { id: string }) {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Modifier l&apos;événement</h1>
             <p className="mt-2 text-sm text-muted">
-              Changer l&apos;adresse de rendez-vous efface les trajets déjà calculés — ils partaient de
+              Changer l&apos;adresse de rendez-vous efface les trajets déjà calculés : ils partaient de
               l&apos;ancien point.
             </p>
           </div>

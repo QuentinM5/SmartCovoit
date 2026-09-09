@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { LogoMark } from "@/components/logo-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export function Header({ back = false }: { back?: boolean }) {
@@ -13,7 +14,8 @@ export function Header({ back = false }: { back?: boolean }) {
   return (
     <header className="border-b border-line">
       <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-5 py-4">
-        <Link href="/" className="flex items-baseline gap-2 transition hover:opacity-70">
+        <Link href="/" className="flex items-center gap-2 transition hover:opacity-70">
+          <LogoMark className="size-5 text-ink" />
           <span className="text-[15px] font-semibold tracking-tight">SmartCovoit</span>
           {back && <span className="text-sm text-muted">Retour</span>}
         </Link>
@@ -75,6 +77,7 @@ export const inputClass =
 export function Button({
   children,
   variant = "primary",
+  className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "quiet" }) {
   const base =
@@ -84,8 +87,13 @@ export function Button({
       ? "bg-ink text-paper hover:opacity-85"
       : "border border-line bg-surface hover:border-ink";
 
+  // `className` fusionné (pas juste passé via `...props` après coup) :
+  // sinon un appelant qui personnalise la mise en page (ex. `flex-1` dans
+  // une barre de boutons) remplacerait silencieusement `base`/`styles` au
+  // lieu de s'y ajouter — piège déjà rencontré, cf. ButtonLink ci-dessous
+  // qui fait ça correctement depuis le début.
   return (
-    <button className={`${base} ${styles}`} {...props}>
+    <button className={`${base} ${styles} ${className}`} {...props}>
       {children}
     </button>
   );

@@ -69,7 +69,7 @@ export function RoutesSection({
 
       {hasManualChanges && (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
-          Des modifications manuelles ont été faites depuis le dernier calcul — les trajets ne sont plus optimaux.
+          Des modifications manuelles ont été faites depuis le dernier calcul. Les trajets ne sont plus optimaux.
         </p>
       )}
 

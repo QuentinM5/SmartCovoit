@@ -52,7 +52,7 @@ export async function generateMetadata({
     const event = await getEventForMetadata(id);
     const driverCount = event.drivers.length;
     const passengerCount = event.passengers.length;
-    const description = `Covoiturage « ${event.name} » — ${driverCount} conducteur${driverCount > 1 ? "s" : ""}, ${passengerCount} passager${passengerCount > 1 ? "s" : ""}. Inscris-toi et vois qui prend qui.`;
+    const description = `Covoiturage « ${event.name} » : ${driverCount} conducteur${driverCount > 1 ? "s" : ""}, ${passengerCount} passager${passengerCount > 1 ? "s" : ""}. Inscris-toi et vois qui prend qui.`;
     // Absente si l'organisateur n'en a pas mis — un lien partagé sans image
     // retombe sur l'aperçu par défaut de la plateforme, pas une image cassée.
     const images = event.has_cover_image ? [coverImageUrl(id)] : undefined;

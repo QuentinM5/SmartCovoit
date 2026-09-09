@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Route as RouteIcon } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Route as RouteIcon, UserPlus } from "lucide-react";
 import {
   ApiError,
   addDriver,
@@ -24,7 +25,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { DirectionPicker } from "@/components/direction";
-import { Button, ErrorNote, Header } from "@/components/ui";
+import { Button, ButtonLink, ErrorNote, Header } from "@/components/ui";
 import { consumeNewEventSeed } from "@/lib/new-event-seed";
 import { networkMessage, moveStopOptimistic } from "@/lib/event-format";
 import { resolveStops } from "@/lib/route";
@@ -39,6 +40,7 @@ import type { Role } from "./signup-section";
 import type { MapRoute } from "@/components/route-map";
 
 export function EventPageClient({ id }: { id: string }) {
+  const pathname = usePathname();
   const { user, loading: authLoading } = useAuth();
   const [event, setEvent] = useState<EventDetail | null>(() => consumeNewEventSeed(id));
   // Capturé une seule fois au montage (useRef n'utilise sa valeur initiale
@@ -307,6 +309,10 @@ export function EventPageClient({ id }: { id: string }) {
   // sans ça, un calcul rapide peut se terminer avant que la barre soit
   // jamais entrée dans le champ de vision.
   const progressRef = useRef<HTMLDivElement>(null);
+  // Cible du bouton "S'inscrire" de la barre fixe mobile (cf. plus bas) :
+  // sur un événement à 40 inscrits, ce bouton et celui de calcul sortent
+  // vite du champ en défilant, cf. audit finition du site, point 8.
+  const signupSectionRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (solving) progressRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [solving]);
@@ -475,11 +481,13 @@ export function EventPageClient({ id }: { id: string }) {
             onDeleteCoverImage={handleDeleteCoverImage}
           />
 
-          {authLoading ? null : user ? (
-            <SignupSection defaultDirection={viewDirection} defaultName={user.name} onAdd={handleAddParticipant} />
-          ) : (
-            <LoginPrompt message="Connecte-toi pour t'inscrire à cet événement." />
-          )}
+          <div ref={signupSectionRef}>
+            {authLoading ? null : user ? (
+              <SignupSection defaultDirection={viewDirection} defaultName={user.name} onAdd={handleAddParticipant} />
+            ) : (
+              <LoginPrompt message="Connecte-toi pour t'inscrire à cet événement." />
+            )}
+          </div>
 
           <DirectionPicker value={viewDirection} onChange={handleViewDirectionChange} />
         </div>
@@ -539,6 +547,40 @@ export function EventPageClient({ id }: { id: string }) {
           />
         )}
       </main>
+
+      {/* Barre fixe mobile seulement (`sm:hidden`) : sur desktop, les deux
+          actions restent visibles d'un coup d'œil sans avoir à défiler. */}
+      {!authLoading && (
+        <div
+          data-surface
+          className="fixed inset-x-0 bottom-0 z-30 flex justify-center border-t border-line bg-surface px-4 py-3 sm:hidden"
+        >
+          <div className="flex w-full max-w-3xl gap-2">
+            {!user ? (
+              <ButtonLink href={`/login?next=${encodeURIComponent(pathname)}`} className="flex-1">
+                Se connecter pour t&apos;inscrire
+              </ButtonLink>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => signupSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2 text-sm font-medium transition hover:border-ink"
+                >
+                  <UserPlus className="size-4" strokeWidth={1.75} aria-hidden="true" />
+                  S&apos;inscrire
+                </button>
+                {viewDrivers.length > 0 && (
+                  <Button onClick={handleSolve} disabled={solving} className="flex-1">
+                    <RouteIcon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+                    {solving ? "Calcul…" : "Calculer"}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {drag && (
         <div

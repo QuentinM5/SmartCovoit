@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth-provider";
+import { CookieBanner } from "@/components/cookie-banner";
+import { SiteFooter } from "@/components/site-footer";
 import { TelemetryProvider } from "@/components/telemetry-provider";
 import { SITE_URL } from "@/lib/site";
 import "./globals.css";
@@ -43,6 +45,21 @@ export const metadata: Metadata = {
   },
 };
 
+// Type d'application réel, pas un `LocalBusiness` inventé (SmartCovoit n'a
+// ni local, ni horaires, ni zone de service à déclarer) : c'est le schéma
+// correct pour un service web sans présence physique, et il ne prétend rien
+// que le site ne fasse pas vraiment.
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "SmartCovoit",
+  description: DESCRIPTION,
+  url: SITE_URL,
+  applicationCategory: "TravelApplication",
+  operatingSystem: "Any (navigateur web)",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "EUR" },
+};
+
 // Appliqué avant le premier rendu pour qu'un rechargement en mode sombre ne
 // flashe pas en blanc.
 const themeScript = `
@@ -64,10 +81,17 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="fr" className={`${plexSans.variable} ${plexMono.variable} h-full`} suppressHydrationWarning>
       <head>
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script
+          nonce={nonce}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </head>
       <body className="min-h-full font-sans antialiased">
         <TelemetryProvider />
         <AuthProvider>{children}</AuthProvider>
+        <SiteFooter />
+        <CookieBanner />
       </body>
     </html>
   );

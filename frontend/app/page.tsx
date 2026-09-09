@@ -81,7 +81,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-3 text-[15px] leading-relaxed text-muted">
             Crée l&apos;événement, partage le lien. Chacun s&apos;inscrit avec son adresse, et les
-            trajets se calculent tout seuls — au plus court pour l&apos;ensemble du groupe.
+            trajets se calculent tout seuls, au plus court pour l&apos;ensemble du groupe.
           </p>
         </div>
 
