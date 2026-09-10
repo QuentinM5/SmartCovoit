@@ -42,9 +42,11 @@ from app.core.security import (
 from app.db.event_log import log_event, log_event_now
 from app.db.models import Driver, Event, EventLog, Passenger, SolutionRecord, User
 from app.distance.fallback import FallbackMatrixProvider
+from app.distance.haversine import haversine_m
 from app.distance.types import Coord, Polyline
 from app.geocoding.nominatim import NominatimClient
 from app.geocoding.types import GeocodingError
+from app.impact import co2_saved_kg
 from app.solver.errors import SolverError
 from app.solver.model import Direction, DriverSpec, PassengerSpec, Route as SolverRoute, SolveRequest
 from app.solver.vrp import solve
@@ -341,6 +343,39 @@ async def list_my_events(
         )
         for event in events
     ]
+
+
+@router.get("/me/impact", response_model=schemas.ImpactOut)
+async def get_my_impact(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> schemas.ImpactOut:
+    """Cf. app.impact pour la méthodologie. Ne compte que les inscriptions
+    passager (pas conducteur — un conducteur a bien conduit) qui ont au
+    moins une solution calculée pour cet (événement, sens) : sans calcul,
+    il n'y a rien qui distingue cette inscription d'une adresse saisie sans
+    suite."""
+    has_solution = (
+        select(SolutionRecord.id)
+        .where(
+            SolutionRecord.event_id == Passenger.event_id,
+            SolutionRecord.direction == Passenger.direction,
+        )
+        .exists()
+    )
+    stmt = (
+        select(Passenger.event_id, Passenger.lat, Passenger.lon, Event.depot_lat, Event.depot_lon)
+        .join(Event, Event.id == Passenger.event_id)
+        .where(Passenger.user_id == current_user.id, has_solution)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    distances_m = [
+        haversine_m(Coord(lat, lon), Coord(depot_lat, depot_lon))
+        for _, lat, lon, depot_lat, depot_lon in rows
+    ]
+    events_count = len({event_id for event_id, *_ in rows})
+    return schemas.ImpactOut(events_count=events_count, co2_saved_kg=co2_saved_kg(distances_m))
 
 
 @router.get("/events/{event_id}", response_model=schemas.EventDetailOut)

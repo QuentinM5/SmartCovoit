@@ -198,6 +198,17 @@ export function getMyEvents() {
   return request<MyEvent[]>("/events");
 }
 
+/** Cf. backend/app/impact.py pour la méthodologie — une estimation, pas une
+ * mesure exacte. */
+export interface Impact {
+  events_count: number;
+  co2_saved_kg: number;
+}
+
+export function getMyImpact() {
+  return request<Impact>("/me/impact");
+}
+
 /**
  * Tous les champs optionnels : seuls ceux fournis sont modifiés côté
  * serveur (`model_dump(exclude_unset=True)`) — `null` explicite remet un

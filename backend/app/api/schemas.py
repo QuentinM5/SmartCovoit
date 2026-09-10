@@ -228,6 +228,13 @@ class ImportResult(BaseModel):
     skipped: list[ImportSkipped]
 
 
+class ImpactOut(BaseModel):
+    """Cf. GET /me/impact et app.impact — estimation, pas une mesure exacte."""
+
+    events_count: int
+    co2_saved_kg: float
+
+
 class EventDetailOut(EventOut):
     """Extension au-delà des endpoints minimaux du brief : nécessaire pour
     qu'une page événement affiche l'état courant (conducteurs/passagers déjà
