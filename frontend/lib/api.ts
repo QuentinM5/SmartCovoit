@@ -262,6 +262,31 @@ export function deleteDriver(eventId: string, driverId: string) {
   return request<void>(`/events/${eventId}/drivers/${driverId}`, { method: "DELETE" });
 }
 
+/** Une ligne d'import en lot (cf. import-dialog.tsx) — pas d'id, pas de
+ * lat/lon : ces lignes viennent d'un export de sondage en texte brut, le
+ * serveur géocode chaque adresse lui-même. */
+export interface ImportRow {
+  role: "driver" | "passenger";
+  name: string;
+  address: string;
+  seats?: number | null;
+  directions: Direction[];
+}
+
+export interface ImportSkipped {
+  row: number;
+  reason: string;
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: ImportSkipped[];
+}
+
+export function importParticipants(eventId: string, rows: ImportRow[]) {
+  return request<ImportResult>(`/events/${eventId}/import`, { method: "POST", body: JSON.stringify(rows) });
+}
+
 export function deletePassenger(eventId: string, passengerId: string) {
   return request<void>(`/events/${eventId}/passengers/${passengerId}`, { method: "DELETE" });
 }

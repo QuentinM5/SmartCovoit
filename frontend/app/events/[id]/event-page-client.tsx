@@ -493,12 +493,16 @@ export function EventPageClient({ id }: { id: string }) {
         </div>
 
         <RosterSection
+          eventId={id}
+          viewDirection={viewDirection}
+          canImport={canManage}
           drivers={viewDrivers}
           passengers={viewPassengers}
           seatsLeft={seatsLeft}
           error={rosterError}
           onRemove={handleRemove}
           onUpdate={handleUpdateParticipant}
+          onImported={refresh}
         />
 
         <section className="flex flex-col gap-4">

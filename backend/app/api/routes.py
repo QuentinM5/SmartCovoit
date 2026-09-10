@@ -602,6 +602,94 @@ async def add_passenger(
     return _passenger_out(passenger, event, current_user)
 
 
+@router.post("/events/{event_id}/import", response_model=schemas.ImportResult)
+async def import_participants(
+    event_id: uuid.UUID,
+    rows: list[schemas.ImportRow],
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    geocoder: NominatimClient = Depends(get_geocoder),
+    settings: Settings = Depends(get_settings),
+) -> schemas.ImportResult:
+    """Import en lot (export de sondage, cf. plan) : réservé à
+    l'organisateur — contrairement à une inscription individuelle, un import
+    inscrit des tiers au nom du groupe entier, ce n'est plus "s'inscrire
+    soi-même". Une ligne mal formée, dont l'adresse ne géocode pas, ou qui
+    dépasserait le plafond d'inscrits, est ignorée plutôt que d'interrompre
+    tout le lot — chaque ligne a sa propre raison dans `skipped` plutôt
+    qu'un échec global.
+    """
+    event = await _get_event_or_404(db, event_id)
+    _check_owner_or_open(event, current_user)
+
+    # Comptés une fois en mémoire plutôt que requêtés à chaque ligne : les
+    # lignes de ce lot ne sont pas encore flush-ées, `_participant_count`
+    # (qui fait un vrai COUNT(*) SQL) ne les verrait de toute façon pas.
+    counts = {
+        direction: await _participant_count(db, event_id, direction)
+        for direction in (Direction.RAMASSAGE, Direction.DISPERSION)
+    }
+
+    imported = 0
+    skipped: list[schemas.ImportSkipped] = []
+
+    for i, row in enumerate(rows):
+        if row.role not in ("driver", "passenger"):
+            skipped.append(schemas.ImportSkipped(row=i, reason="Rôle invalide."))
+            continue
+        name = row.name.strip()
+        address = row.address.strip()
+        if not name or not address:
+            skipped.append(schemas.ImportSkipped(row=i, reason="Nom ou adresse manquant."))
+            continue
+        directions = [Direction(d) for d in row.directions if d in ("ramassage", "dispersion")]
+        if not directions:
+            skipped.append(schemas.ImportSkipped(row=i, reason="Sens du trajet manquant."))
+            continue
+        if row.role == "driver" and (row.seats is None or not (0 < row.seats <= 20)):
+            skipped.append(schemas.ImportSkipped(row=i, reason="Nombre de places invalide."))
+            continue
+
+        try:
+            lat, lon = await _locate_or_422(geocoder, address, None)
+        except HTTPException:
+            skipped.append(schemas.ImportSkipped(row=i, reason=f"Adresse introuvable : {address!r}."))
+            continue
+
+        inserted_any = False
+        for direction in directions:
+            if _participant_cap_reached(counts[direction], settings.max_participants_per_event):
+                skipped.append(
+                    schemas.ImportSkipped(row=i, reason=f"Plafond atteint pour le sens « {direction.value} ».")
+                )
+                continue
+            counts[direction] += 1
+            if row.role == "driver":
+                db.add(
+                    Driver(
+                        id=uuid.uuid4(), event_id=event_id, direction=direction, name=name,
+                        seats=row.seats, address=address, lat=lat, lon=lon, user_id=current_user.id,
+                    )
+                )
+            else:
+                db.add(
+                    Passenger(
+                        id=uuid.uuid4(), event_id=event_id, direction=direction, name=name,
+                        address=address, lat=lat, lon=lon, user_id=current_user.id,
+                    )
+                )
+            inserted_any = True
+        if inserted_any:
+            imported += 1
+
+    log_event(
+        db, "participant_imported_batch", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, imported=imported, skipped=len(skipped),
+    )
+    await db.commit()
+    return schemas.ImportResult(imported=imported, skipped=skipped)
+
+
 @router.patch("/events/{event_id}/drivers/{driver_id}", response_model=schemas.DriverOut)
 async def update_driver(
     event_id: uuid.UUID,

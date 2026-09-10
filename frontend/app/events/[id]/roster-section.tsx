@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Car, Pencil, User, X } from "lucide-react";
+import { Car, Pencil, Upload, User, X } from "lucide-react";
 import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
 import { DeleteButton } from "@/components/delete-button";
 import { Button, ErrorNote, Field, inputClass } from "@/components/ui";
-import type { Driver, Passenger } from "@/lib/api";
+import type { Direction, Driver, Passenger } from "@/lib/api";
+import { ImportDialog } from "./import-dialog";
 import type { Role } from "./signup-section";
 
 export interface ParticipantUpdate {
@@ -17,13 +18,22 @@ export interface ParticipantUpdate {
 }
 
 export function RosterSection({
+  eventId,
+  viewDirection,
+  canImport,
   drivers,
   passengers,
   seatsLeft,
   error,
   onRemove,
   onUpdate,
+  onImported,
 }: {
+  eventId: string;
+  viewDirection: Direction;
+  /** Importer en lot inscrit des tiers au nom du groupe entier : réservé à
+   * l'organisateur, même garde que côté serveur (`_check_owner_or_open`). */
+  canImport: boolean;
   drivers: Driver[];
   passengers: Passenger[];
   /** Négatif = surcapacité (plus de passagers que de places offertes). */
@@ -31,7 +41,10 @@ export function RosterSection({
   error: string | null;
   onRemove: (kind: Role, participantId: string) => void;
   onUpdate: (kind: Role, participantId: string, data: ParticipantUpdate) => Promise<void>;
+  onImported: () => void;
 }) {
+  const [importing, setImporting] = useState(false);
+
   return (
     <section>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -52,6 +65,26 @@ export function RosterSection({
           )}
         </p>
       </div>
+
+      {canImport && (
+        <button
+          type="button"
+          onClick={() => setImporting(true)}
+          className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink"
+        >
+          <Upload className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          Importer depuis un fichier
+        </button>
+      )}
+
+      {importing && (
+        <ImportDialog
+          eventId={eventId}
+          defaultDirection={viewDirection}
+          onClose={() => setImporting(false)}
+          onImported={onImported}
+        />
+      )}
 
       {drivers.length === 0 && passengers.length === 0 ? (
         <p className="mt-3 text-sm text-muted">

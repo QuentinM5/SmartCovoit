@@ -201,6 +201,33 @@ class PassengerUpdate(Located):
     address: str | None = Field(default=None, min_length=1, max_length=500)
 
 
+class ImportRow(BaseModel):
+    """Une ligne d'import en lot (cf. POST /events/{id}/import).
+
+    Volontairement permissive (pas de `Literal`/`Direction`, pas de
+    contrainte `min_length`/`gt` comme `DriverCreate`/`PassengerCreate`) :
+    une ligne mal formée doit être ignorée individuellement par la route,
+    pas faire échouer la validation de tout le lot en 422 avant même que le
+    traitement ligne par ligne ne commence — c'est le comportement attendu
+    d'un import tolérant aux erreurs (cf. plan)."""
+
+    role: str = ""
+    name: str = ""
+    address: str = ""
+    seats: int | None = None
+    directions: list[str] = Field(default_factory=list)
+
+
+class ImportSkipped(BaseModel):
+    row: int
+    reason: str
+
+
+class ImportResult(BaseModel):
+    imported: int
+    skipped: list[ImportSkipped]
+
+
 class EventDetailOut(EventOut):
     """Extension au-delà des endpoints minimaux du brief : nécessaire pour
     qu'une page événement affiche l'état courant (conducteurs/passagers déjà
