@@ -28,12 +28,33 @@ Exposé publiquement via le tunnel Cloudflare existant du NAS (`TrueNAS`,
 services du NAS (route publiée dans la config du tunnel + CNAME DNS vers
 `<tunnel-id>.cfargotunnel.com`, pas d'application Access dessus) :
 
-**`https://smartcovoitlocalapi.qmeyer.fr`** — `/health` et `/docs` répondent, testé
-de bout en bout (création d'événement, conducteur, passager, solve avec
+**`https://smartcovoitlocalapi.qmeyer.fr`** — `/health` répond (`/docs` est
+fermé intentionnellement en production, cf. `Settings.enable_api_docs`),
+testé de bout en bout (création d'événement, conducteur, passager, solve avec
 distances OSRM réelles) depuis l'extérieur du réseau local.
 
 Aucune IP ni hostname n'est en dur dans le code — tout passe par les
 variables d'environnement.
+
+⚠️ **Le checkout git de `/mnt/Main/apps/smartcovoit/` sur le NAS n'est pas à
+jour et ne doit pas servir à déployer** : il est resté sur une branche locale
+`master` très ancienne (`f84edb1`), alors que le code réellement en place a
+été mis à jour par-dessus via copie directe de fichiers (`scp`), sans jamais
+repasser par git. `git pull` y échoue (pas de suivi de branche configuré) et
+serait de toute façon dangereux à forcer : l'historique local a trop divergé
+du contenu réel du dossier pour qu'une fusion soit fiable. Pour déployer un
+changement backend, identifier les fichiers modifiés (`git diff --stat` en
+local entre les commits concernés) et les transférer un par un avec `scp -P
+25555 <fichier> root@192.168.1.155:/mnt/Main/apps/smartcovoit/<même-chemin>`,
+puis reconstruire :
+```bash
+docker compose -f infra/docker-compose.yml --profile osrm up -d --build backend
+```
+Remettre ce dossier sur un vrai suivi git propre (`git checkout main` après
+avoir vérifié qu'aucun fichier réel ne serait écrasé, ou plus simplement un
+nouveau clone à côté puis bascule) réglerait ça durablement, mais n'a pas été
+fait — risque de casser le service en production pour un gain surtout
+cosmétique tant que le contournement ci-dessus fonctionne.
 
 ## 3. Instance cloud de secours (Heroku) — à faire
 
