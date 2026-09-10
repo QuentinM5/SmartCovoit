@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # par API (Routes API) côté console Google Cloud.
     google_routes_api_key: str = ""
 
+    # Vide = pas de suggestion de point de rassemblement (cf.
+    # app/distance/google_places.py) -> le bouton correspondant reste
+    # simplement absent côté frontend, sans erreur. Distincte de
+    # google_routes_api_key : une API Google différente, facturée
+    # séparément, à son propre plafond de quota côté console.
+    google_places_api_key: str = ""
+
     nominatim_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "smartcovoit/1.0 (set NOMINATIM_USER_AGENT with contact info)"
 

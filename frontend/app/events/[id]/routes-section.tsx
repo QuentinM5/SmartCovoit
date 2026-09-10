@@ -1,11 +1,15 @@
 "use client";
 
+import { useState } from "react";
+import { Users } from "lucide-react";
 import { RouteLine } from "@/components/route-line";
 import { RouteMap, type MapRoute } from "@/components/route-map";
+import { Button, ErrorNote } from "@/components/ui";
 import { formatMoney, routeCostEuros } from "@/lib/cost";
+import { networkMessage } from "@/lib/event-format";
 import { formatDistance, formatDuration } from "@/lib/route";
 import type { DragInfo, DragStartParams } from "@/lib/use-passenger-drag";
-import type { EventDetail, Solution } from "@/lib/api";
+import { getMeetupSuggestions, type EventDetail, type MeetupSuggestion, type Solution } from "@/lib/api";
 import { SourceBanner } from "./event-notices";
 
 export function RoutesSection({
@@ -101,6 +105,96 @@ export function RoutesSection({
           );
         })}
       </div>
+
+      <MeetupSuggestions eventId={event.id} direction={solution.direction} passengers={event.passengers} />
     </section>
+  );
+}
+
+/**
+ * Regroupe les passagers proches d'une même tournée et suggère un vrai
+ * lieu de rassemblement — cf. backend/app.meetup_clustering. Calculée à la
+ * demande (bouton explicite), jamais automatiquement : chaque appel coûte
+ * des requêtes Google Places facturées. Purement informatif, aucun bouton
+ * "appliquer" — changer l'adresse d'un passager sans son accord n'est pas
+ * une décision que cette page doit pouvoir prendre à sa place.
+ */
+function MeetupSuggestions({
+  eventId,
+  direction,
+  passengers,
+}: {
+  eventId: string;
+  direction: Solution["direction"];
+  passengers: EventDetail["passengers"];
+}) {
+  const [suggestions, setSuggestions] = useState<MeetupSuggestion[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleClick() {
+    setLoading(true);
+    setError(null);
+    try {
+      setSuggestions(await getMeetupSuggestions(eventId, direction));
+    } catch (err) {
+      setError(networkMessage(err, "Impossible de charger les suggestions. Réessaie."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function passengerNames(ids: string[]): string {
+    return ids
+      .map((id) => passengers.find((p) => p.id === id)?.name)
+      .filter((name): name is string => !!name)
+      .join(", ");
+  }
+
+  if (suggestions === null) {
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink disabled:opacity-45"
+        >
+          <Users className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          {loading ? "Recherche…" : "Voir les suggestions de regroupement"}
+        </button>
+        {error && (
+          <div className="mt-2">
+            <ErrorNote>{error}</ErrorNote>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (suggestions.length === 0) {
+    return <p className="text-xs text-muted">Aucun regroupement à suggérer pour ces trajets.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs font-medium tracking-wide text-muted uppercase">Points de rassemblement suggérés</p>
+      {suggestions.map((s, i) => (
+        <div key={i} data-surface className="rounded-md border border-line bg-surface p-3 text-sm">
+          <p>
+            <span className="font-medium">{passengerNames(s.passenger_ids)}</span> sont proches les uns des
+            autres — rendez-vous suggéré :
+          </p>
+          <p className="mt-1 text-muted">
+            <span className="font-medium text-ink">{s.name}</span> — {s.address}
+          </p>
+        </div>
+      ))}
+      <div>
+        <Button type="button" variant="quiet" onClick={handleClick} disabled={loading}>
+          {loading ? "Recherche…" : "Rafraîchir"}
+        </Button>
+      </div>
+    </div>
   );
 }

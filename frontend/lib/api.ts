@@ -264,6 +264,20 @@ export function updateAccessRequest(eventId: string, requestId: string, status: 
   });
 }
 
+/** Une suggestion affichée, jamais appliquée automatiquement — cf.
+ * backend/app/meetup_clustering.py. */
+export interface MeetupSuggestion {
+  passenger_ids: string[];
+  name: string;
+  address: string;
+  lat: number;
+  lon: number;
+}
+
+export function getMeetupSuggestions(eventId: string, direction: Direction) {
+  return request<MeetupSuggestion[]>(`/events/${eventId}/solution/meetup-suggestions?direction=${direction}`);
+}
+
 export function addDriver(
   eventId: string,
   // `id` optionnel : le fournir permet à un rejeu de cette requête (worker
