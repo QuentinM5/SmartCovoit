@@ -3,7 +3,16 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
-import { ApiError, deleteEvent, getEvent, updateEvent, type EventDetail } from "@/lib/api";
+import {
+  addDriver,
+  addPassenger,
+  ApiError,
+  createEvent,
+  deleteEvent,
+  getEvent,
+  updateEvent,
+  type EventDetail,
+} from "@/lib/api";
 import { EventForm, type EventFormValues } from "@/components/event-form";
 import { CURRENCIES, DEFAULT_CONSUMPTION_L_PER_100KM, DEFAULT_CURRENCY, DEFAULT_FUEL_PRICE_PER_L } from "@/lib/cost";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
@@ -104,10 +113,158 @@ export function EditEventClient({ id }: { id: string }) {
 
           <CostSettingsForm eventId={id} event={event} />
 
+          <DuplicateSection event={event} />
+
           <DangerZone eventId={id} eventName={event.name} />
         </div>
       </main>
     </>
+  );
+}
+
+/**
+ * Duplique l'événement : pratique pour un organisateur récurrent (ex. un
+ * tournoi tous les dimanches) qui veut relancer les mêmes paramètres sans
+ * tout ressaisir. Purement frontend : réutilise `EventForm` (déjà partagé
+ * avec la création) puis les mêmes appels que la création/l'inscription
+ * classique — aucun endpoint dédié côté serveur.
+ *
+ * Ce qui est copié reste au choix de la personne qui duplique (cases à
+ * cocher), plutôt qu'un comportement fixe : les tournées calculées
+ * (`SolutionRecord`) ne sont elles jamais copiées, ça n'aurait pas de sens
+ * sur une nouvelle date.
+ */
+function DuplicateSection({ event }: { event: EventDetail }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [copyCostSettings, setCopyCostSettings] = useState(true);
+  const [copyParticipants, setCopyParticipants] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDuplicate(values: EventFormValues) {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const newEventId = crypto.randomUUID();
+      await createEvent({
+        id: newEventId,
+        name: values.name,
+        depot_address: values.depot.address,
+        event_date: values.eventDate,
+        description: values.description.trim() || null,
+        lat: values.depot.lat,
+        lon: values.depot.lon,
+      });
+
+      if (copyCostSettings) {
+        await updateEvent(newEventId, {
+          fuel_price_per_l: event.fuel_price_per_l,
+          consumption_l_per_100km: event.consumption_l_per_100km,
+          currency: event.currency,
+        });
+      }
+
+      if (copyParticipants) {
+        // Coordonnées déjà connues (reprises telles quelles de l'événement
+        // source) : pas de nouveau géocodage, ces appels n'attendent pas le
+        // limiteur Nominatim — un Promise.all est donc sûr même pour un
+        // gros événement.
+        await Promise.all([
+          ...event.drivers.map((d) =>
+            addDriver(newEventId, {
+              name: d.name,
+              seats: d.seats,
+              address: d.address,
+              lat: d.lat,
+              lon: d.lon,
+              direction: d.direction,
+            }),
+          ),
+          ...event.passengers.map((p) =>
+            addPassenger(newEventId, {
+              name: p.name,
+              address: p.address,
+              lat: p.lat,
+              lon: p.lon,
+              direction: p.direction,
+            }),
+          ),
+        ]);
+      }
+
+      router.push(`/events/${newEventId}`);
+      // Pas de setSubmitting(false) : la page se démonte au push, comme
+      // EventForm le fait déjà pour la création/l'édition classique.
+    } catch (err) {
+      setError(networkMessage(err, "La duplication n'a pas abouti. Réessaie."));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-line p-4 sm:p-5">
+      <div>
+        <h2 className="text-sm font-semibold tracking-tight">Dupliquer cet événement</h2>
+        <p className="mt-1 text-xs text-muted">
+          Relance les mêmes paramètres pour une nouvelle date, sans repartir de zéro.
+        </p>
+      </div>
+
+      {open ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={copyCostSettings}
+                onChange={(e) => setCopyCostSettings(e.target.checked)}
+              />
+              Copier le barème de frais et la devise
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={copyParticipants}
+                onChange={(e) => setCopyParticipants(e.target.checked)}
+              />
+              Copier les inscrits ({event.drivers.length} conducteur
+              {event.drivers.length > 1 ? "s" : ""}, {event.passengers.length} passager
+              {event.passengers.length > 1 ? "s" : ""})
+            </label>
+          </div>
+
+          <EventForm
+            initialValues={{
+              name: event.name,
+              // Date volontairement vide : l'ancienne n'a pas de sens pour
+              // le nouvel événement, `EventForm` bloque déjà l'envoi tant
+              // qu'elle n'est pas resaisie.
+              eventDate: "",
+              description: event.description ?? "",
+              depot: { address: event.depot_address, lat: event.depot_lat, lon: event.depot_lon },
+            }}
+            submitLabel="Créer la copie"
+            submittingLabel="Duplication…"
+            onSubmit={handleDuplicate}
+          />
+
+          {error && <ErrorNote>{error}</ErrorNote>}
+
+          <div>
+            <Button type="button" variant="quiet" onClick={() => setOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <Button type="button" variant="quiet" onClick={() => setOpen(true)}>
+            Dupliquer l&apos;événement
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
