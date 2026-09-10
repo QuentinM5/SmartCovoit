@@ -35,7 +35,7 @@ import { EventHeader } from "./event-header";
 import { RosterSection, type ParticipantUpdate } from "./roster-section";
 import { RoutesSection } from "./routes-section";
 import { SignupSection } from "./signup-section";
-import { LoginPrompt } from "./event-notices";
+import { LoginPrompt, RestrictedEventGate } from "./event-notices";
 import type { Role } from "./signup-section";
 import type { MapRoute } from "@/components/route-map";
 
@@ -59,6 +59,9 @@ export function EventPageClient({ id }: { id: string }) {
 
   const [solution, setSolution] = useState<Solution | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // 403 sur GET /events/{id} : événement en mode "approval", compte non
+  // approuvé (ou anonyme) — remplace toute la page, cf. RestrictedEventGate.
+  const [restricted, setRestricted] = useState(false);
   const [solveError, setSolveError] = useState<string | null>(null);
   const [solving, setSolving] = useState(false);
   const [rosterError, setRosterError] = useState<string | null>(null);
@@ -92,6 +95,10 @@ export function EventPageClient({ id }: { id: string }) {
         if (err instanceof ApiError && err.status === 404 && creationRetriesRef.current > 0) {
           creationRetriesRef.current -= 1;
           setTimeout(attempt, 700);
+          return;
+        }
+        if (err instanceof ApiError && err.status === 403) {
+          setRestricted(true);
           return;
         }
         setLoadError(
@@ -435,6 +442,12 @@ export function EventPageClient({ id }: { id: string }) {
       geometry: route.geometry,
     }));
   }, [event, solution]);
+
+  if (restricted) {
+    // `authLoading` : pas de flash "connecte-toi" avant que l'état réel du
+    // compte soit connu (même souci que le Header, cf. auth-provider.tsx).
+    return authLoading ? null : <RestrictedEventGate eventId={id} user={user} />;
+  }
 
   if (loadError) {
     return (

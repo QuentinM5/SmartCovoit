@@ -9,8 +9,12 @@ import {
   ApiError,
   createEvent,
   deleteEvent,
+  getAccessRequests,
   getEvent,
+  updateAccessRequest,
   updateEvent,
+  type AccessMode,
+  type AccessRequest,
   type EventDetail,
 } from "@/lib/api";
 import { EventForm, type EventFormValues } from "@/components/event-form";
@@ -112,6 +116,14 @@ export function EditEventClient({ id }: { id: string }) {
           />
 
           <CostSettingsForm eventId={id} event={event} />
+
+          <AccessSettingsForm
+            eventId={id}
+            event={event}
+            onAccessModeChange={(mode) => setEvent((current) => (current ? { ...current, access_mode: mode } : current))}
+          />
+
+          {event.access_mode === "approval" && <AccessRequestsPanel eventId={id} />}
 
           <DuplicateSection event={event} />
 
@@ -427,5 +439,157 @@ function CostSettingsForm({ eventId, event }: { eventId: string; event: EventDet
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * "open" (défaut) laisse le lien accessible à quiconque l'a — comportement
+ * historique, inchangé. "approval" ferme l'événement le temps qu'un compte
+ * approuvé soit choisi (cf. AccessRequestsPanel) — rien n'est visible entre
+ * les deux, pas même le nom de l'événement (cf. RestrictedEventGate côté
+ * page événement).
+ */
+function AccessSettingsForm({
+  eventId,
+  event,
+  onAccessModeChange,
+}: {
+  eventId: string;
+  event: EventDetail;
+  onAccessModeChange: (mode: AccessMode) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleChange(mode: AccessMode) {
+    setSaving(true);
+    setError(null);
+    try {
+      await updateEvent(eventId, { access_mode: mode });
+      onAccessModeChange(mode);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "L'enregistrement n'a pas abouti. Réessaie.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const OPTIONS: { value: AccessMode; label: string; help: string }[] = [
+    { value: "open", label: "Toute personne avec le lien", help: "Comportement actuel — rien ne change." },
+    {
+      value: "approval",
+      label: "Approbation requise",
+      help: "Le lien seul ne suffit plus : il faut un compte connecté, approuvé par toi.",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-line p-4 sm:p-5">
+      <div>
+        <h2 className="text-sm font-semibold tracking-tight">Confidentialité</h2>
+        <p className="mt-1 text-xs text-muted">Qui peut voir cet événement.</p>
+      </div>
+      <fieldset className="flex flex-col gap-2">
+        {OPTIONS.map((option) => (
+          <label key={option.value} className="flex items-start gap-2 text-sm">
+            <input
+              type="radio"
+              name="access_mode"
+              className="mt-0.5"
+              checked={event.access_mode === option.value}
+              disabled={saving}
+              onChange={() => handleChange(option.value)}
+            />
+            <span>
+              <span className="block font-medium">{option.label}</span>
+              <span className="block text-xs text-muted">{option.help}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      {error && <ErrorNote>{error}</ErrorNote>}
+    </div>
+  );
+}
+
+/**
+ * Visible seulement quand `access_mode === "approval"` (cf. call site) :
+ * charge la liste au montage, pas de rafraîchissement automatique — un
+ * clic Approuver/Refuser retire la ligne de la liste locale directement
+ * (mise à jour optimiste, même patron que roster-section.tsx).
+ */
+function AccessRequestsPanel({ eventId }: { eventId: string }) {
+  const [requests, setRequests] = useState<AccessRequest[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAccessRequests(eventId)
+      .then(setRequests)
+      .catch((err) => setError(networkMessage(err, "Impossible de charger les demandes d'accès.")));
+  }, [eventId]);
+
+  async function handleDecision(requestId: string, status: "approved" | "denied") {
+    setBusyId(requestId);
+    setError(null);
+    try {
+      const updated = await updateAccessRequest(eventId, requestId, status);
+      setRequests((current) => current?.map((r) => (r.id === requestId ? updated : r)) ?? current);
+    } catch (err) {
+      setError(networkMessage(err, "L'action n'a pas abouti. Réessaie."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const pending = requests?.filter((r) => r.status === "pending") ?? [];
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-line p-4 sm:p-5">
+      <div>
+        <h2 className="text-sm font-semibold tracking-tight">Demandes d&apos;accès</h2>
+        <p className="mt-1 text-xs text-muted">Approuve ou refuse qui peut voir cet événement.</p>
+      </div>
+
+      {error && <ErrorNote>{error}</ErrorNote>}
+
+      {requests === null ? (
+        <p className="text-sm text-muted">Chargement…</p>
+      ) : pending.length === 0 ? (
+        <p className="text-sm text-muted">Aucune demande en attente.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {pending.map((request) => (
+            <li
+              key={request.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-sm"
+            >
+              <span>
+                <span className="font-medium">{request.user_name}</span>{" "}
+                <span className="text-muted">{request.user_email}</span>
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDecision(request.id, "approved")}
+                  disabled={busyId === request.id}
+                  className="text-xs font-medium text-inbound underline underline-offset-2 disabled:opacity-45"
+                >
+                  Approuver
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDecision(request.id, "denied")}
+                  disabled={busyId === request.id}
+                  className="text-xs font-medium text-danger underline underline-offset-2 disabled:opacity-45"
+                >
+                  Refuser
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

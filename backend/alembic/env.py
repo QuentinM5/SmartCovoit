@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from app.core.config import get_settings
 from app.db.base import Base
 from app.db.models import (  # noqa: F401  (enregistre les modèles sur Base.metadata)
+    AccessRequest,
     Driver,
     Event,
     EventLog,

@@ -51,6 +51,7 @@ export default function HomePage() {
       fuel_price_per_l: null,
       consumption_l_per_100km: null,
       currency: null,
+      access_mode: "open",
       drivers: [],
       passengers: [],
     });

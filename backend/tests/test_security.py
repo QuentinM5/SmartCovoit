@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
@@ -15,7 +15,14 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.deps import get_admin_user
-from app.api.routes import _can_remove_participant, _check_owner_or_open, _driver_out, _email_fingerprint, _passenger_out
+from app.api.routes import (
+    _can_remove_participant,
+    _check_can_view_event,
+    _check_owner_or_open,
+    _driver_out,
+    _email_fingerprint,
+    _passenger_out,
+)
 from app.core.config import Settings
 from app.core.security import (
     GoogleIdentity,
@@ -102,8 +109,11 @@ def _user() -> User:
     return User(id=uuid.uuid4(), email="a@example.com", name="A")
 
 
-def _event(owner_id: uuid.UUID | None) -> Event:
-    return Event(id=uuid.uuid4(), name="Test", depot_address="", depot_lat=0, depot_lon=0, owner_id=owner_id)
+def _event(owner_id: uuid.UUID | None, access_mode: str = "open") -> Event:
+    return Event(
+        id=uuid.uuid4(), name="Test", depot_address="", depot_lat=0, depot_lon=0,
+        owner_id=owner_id, access_mode=access_mode,
+    )
 
 
 def test_check_owner_or_open_allows_owner() -> None:
@@ -149,6 +159,48 @@ def test_can_remove_participant_event_owner_can_remove_anyone() -> None:
 def test_can_remove_participant_rejects_stranger() -> None:
     event = _event(owner_id=uuid.uuid4())
     assert not _can_remove_participant(event, uuid.uuid4(), _user())
+
+
+def _db_returning(value: object) -> AsyncMock:
+    """Faux AsyncSession dont `.scalar(...)` renvoie toujours `value` — pour
+    tester `_check_can_view_event` sans vraie base."""
+    db = AsyncMock()
+    db.scalar.return_value = value
+    return db
+
+
+async def test_check_can_view_event_open_event_never_queries_db() -> None:
+    event = _event(owner_id=uuid.uuid4(), access_mode="open")
+    db = _db_returning(None)
+    await _check_can_view_event(db, event, None)  # ne lève pas
+    db.scalar.assert_not_called()
+
+
+async def test_check_can_view_event_approval_rejects_anonymous() -> None:
+    event = _event(owner_id=uuid.uuid4(), access_mode="approval")
+    with pytest.raises(HTTPException) as exc_info:
+        await _check_can_view_event(_db_returning(None), event, None)
+    assert exc_info.value.status_code == 403
+
+
+async def test_check_can_view_event_approval_allows_owner_without_query() -> None:
+    owner = _user()
+    event = _event(owner_id=owner.id, access_mode="approval")
+    db = _db_returning(None)
+    await _check_can_view_event(db, event, owner)  # ne lève pas
+    db.scalar.assert_not_called()
+
+
+async def test_check_can_view_event_approval_allows_approved_user() -> None:
+    event = _event(owner_id=uuid.uuid4(), access_mode="approval")
+    await _check_can_view_event(_db_returning(uuid.uuid4()), event, _user())  # ne lève pas
+
+
+async def test_check_can_view_event_approval_rejects_unapproved_user() -> None:
+    event = _event(owner_id=uuid.uuid4(), access_mode="approval")
+    with pytest.raises(HTTPException) as exc_info:
+        await _check_can_view_event(_db_returning(None), event, _user())
+    assert exc_info.value.status_code == 403
 
 
 def _driver(user_id: uuid.UUID | None) -> Driver:

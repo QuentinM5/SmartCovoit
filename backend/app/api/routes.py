@@ -40,7 +40,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.event_log import log_event, log_event_now
-from app.db.models import Driver, Event, EventLog, Passenger, SolutionRecord, User
+from app.db.models import AccessRequest, Driver, Event, EventLog, Passenger, SolutionRecord, User
 from app.distance.fallback import FallbackMatrixProvider
 from app.distance.haversine import haversine_m
 from app.distance.types import Coord, Polyline
@@ -385,6 +385,7 @@ async def get_event(
     current_user: User | None = Depends(get_optional_user),
 ) -> schemas.EventDetailOut:
     event = await _load_event_with_participants(db, event_id)
+    await _check_can_view_event(db, event, current_user)
     return schemas.EventDetailOut(
         **schemas.EventOut.model_validate(event).model_dump(),
         drivers=[_driver_out(d, event, current_user) for d in event.drivers],
@@ -416,6 +417,12 @@ async def update_event(
         lat, lon = await _locate_or_422(geocoder, body.depot_address, body.coords)
         updates["depot_lat"] = lat
         updates["depot_lon"] = lon
+    # Contrairement à currency/fuel_price_per_l, `access_mode` n'a pas de
+    # sens nul en base (colonne NOT NULL, cf. migration 0008) : un `null`
+    # explicite dans le corps est une erreur de client, pas une demande de
+    # remise à un défaut à interpréter côté frontend.
+    if "access_mode" in updates and updates["access_mode"] is None:
+        raise HTTPException(status_code=422, detail="access_mode ne peut pas être nul.")
 
     for field, value in updates.items():
         setattr(event, field, value)
@@ -451,6 +458,96 @@ async def delete_event(
     await db.delete(event)
     await db.commit()
     return Response(status_code=204)
+
+
+@router.post("/events/{event_id}/access-requests", response_model=schemas.AccessRequestOut, status_code=201)
+async def request_access(
+    event_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> schemas.AccessRequestOut:
+    """Demander l'accès à un événement en mode "approval". Réactive une
+    ancienne demande refusée plutôt que d'en créer une deuxième (contrainte
+    unique sur event_id+user_id) — refaire une demande après un refus est un
+    usage légitime, pas une tentative à bloquer."""
+    event = await _get_event_or_404(db, event_id)
+    if event.access_mode != "approval":
+        raise HTTPException(status_code=422, detail="Cet événement n'exige pas d'approbation.")
+    if event.owner_id == current_user.id:
+        raise HTTPException(status_code=422, detail="Tu es déjà organisateur de cet événement.")
+
+    existing = await db.scalar(
+        select(AccessRequest).where(AccessRequest.event_id == event_id, AccessRequest.user_id == current_user.id)
+    )
+    if existing is not None:
+        if existing.status in ("pending", "approved"):
+            raise HTTPException(status_code=409, detail="Une demande existe déjà pour ce compte.")
+        existing.status = "pending"
+        await db.commit()
+        await db.refresh(existing)
+        return _access_request_out(existing, current_user)
+
+    request = AccessRequest(id=uuid.uuid4(), event_id=event_id, user_id=current_user.id, status="pending")
+    db.add(request)
+    log_event(db, "access_requested", instance=settings.instance_name, event_id=event_id, user_id=current_user.id)
+    await db.commit()
+    await db.refresh(request)
+    return _access_request_out(request, current_user)
+
+
+@router.get("/events/{event_id}/access-requests", response_model=list[schemas.AccessRequestOut])
+async def list_access_requests(
+    event_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[schemas.AccessRequestOut]:
+    event = await _get_event_or_404(db, event_id)
+    _check_owner_or_open(event, current_user)
+    stmt = (
+        select(AccessRequest, User)
+        .join(User, User.id == AccessRequest.user_id)
+        .where(AccessRequest.event_id == event_id)
+    )
+    rows = (await db.execute(stmt)).all()
+    # `pending` en premier (le cas qui demande une action), plus récent
+    # d'abord dans chaque groupe — deux tris successifs (stables) plutôt
+    # qu'une expression SQL CASE, plus simple à lire pour une liste qui
+    # reste petite.
+    status_priority = {"pending": 0, "approved": 1, "denied": 2}
+    rows = sorted(rows, key=lambda r: r[0].created_at, reverse=True)
+    rows.sort(key=lambda r: status_priority[r[0].status])
+    return [_access_request_out(request, requester) for request, requester in rows]
+
+
+@router.patch("/events/{event_id}/access-requests/{request_id}", response_model=schemas.AccessRequestOut)
+async def update_access_request(
+    event_id: uuid.UUID,
+    request_id: uuid.UUID,
+    body: schemas.AccessRequestUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> schemas.AccessRequestOut:
+    event = await _get_event_or_404(db, event_id)
+    _check_owner_or_open(event, current_user)
+    stmt = (
+        select(AccessRequest, User)
+        .join(User, User.id == AccessRequest.user_id)
+        .where(AccessRequest.id == request_id, AccessRequest.event_id == event_id)
+    )
+    row = (await db.execute(stmt)).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Demande introuvable pour cet événement.")
+    request, requester = row
+    request.status = body.status
+    log_event(
+        db, "access_request_updated", instance=settings.instance_name, event_id=event_id,
+        user_id=current_user.id, status=body.status,
+    )
+    await db.commit()
+    await db.refresh(request)
+    return _access_request_out(request, requester)
 
 
 @router.post("/events/{event_id}/cover-image", status_code=204, response_class=Response)
@@ -508,15 +605,21 @@ async def delete_cover_image(
 
 
 @router.get("/events/{event_id}/cover-image")
-async def get_cover_image(event_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Response:
-    # Publique, sans authentification : un événement partagé par lien doit
-    # afficher son image de couverture sans que le visiteur soit connecté,
+async def get_cover_image(
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+) -> Response:
+    # Publique, sans authentification, SAUF pour un événement en mode
+    # "approval" (cf. _check_can_view_event) : un événement ouvert partagé
+    # par lien doit afficher son image sans que le visiteur soit connecté,
     # comme le reste de la lecture (cf. matrice d'autorisation du plan).
     stmt = select(Event).options(undefer(Event.cover_image)).where(Event.id == event_id)
     result = await db.execute(stmt)
     event = result.scalar_one_or_none()
     if event is None or event.cover_image is None:
         raise HTTPException(status_code=404, detail="Pas d'image de couverture pour cet événement.")
+    await _check_can_view_event(db, event, current_user)
     return Response(
         content=event.cover_image,
         media_type=event.cover_image_content_type or "application/octet-stream",
@@ -534,6 +637,7 @@ async def add_driver(
     settings: Settings = Depends(get_settings),
 ) -> schemas.DriverOut:
     event = await _get_event_or_404(db, event_id)
+    await _check_can_view_event(db, event, current_user)
     if body.id is not None:
         # Rejeu d'un POST déjà appliqué (cf. failover-policy.ts) : on renvoie
         # la ligne existante avant même de vérifier le plafond, sinon un
@@ -594,6 +698,7 @@ async def add_passenger(
     settings: Settings = Depends(get_settings),
 ) -> schemas.PassengerOut:
     event = await _get_event_or_404(db, event_id)
+    await _check_can_view_event(db, event, current_user)
     if body.id is not None:
         existing = await db.get(Passenger, body.id)
         if existing is not None and existing.event_id == event_id:
@@ -737,6 +842,7 @@ async def update_driver(
 ) -> schemas.DriverOut:
     driver = await _get_participant_or_404(db, Driver, event_id, driver_id)
     event = await _get_event_or_404(db, event_id)
+    await _check_can_view_event(db, event, current_user)
     # Même règle que pour retirer une inscription : qui peut supprimer puis
     # réinscrire peut tout aussi bien modifier sur place.
     if not _can_remove_participant(event, driver.user_id, current_user):
@@ -784,6 +890,7 @@ async def update_passenger(
 ) -> schemas.PassengerOut:
     passenger = await _get_participant_or_404(db, Passenger, event_id, passenger_id)
     event = await _get_event_or_404(db, event_id)
+    await _check_can_view_event(db, event, current_user)
     if not _can_remove_participant(event, passenger.user_id, current_user):
         raise HTTPException(status_code=403, detail="Tu ne peux modifier que ta propre inscription.")
 
@@ -825,6 +932,7 @@ async def remove_driver(
 ) -> Response:
     driver = await _get_participant_or_404(db, Driver, event_id, driver_id)
     event = await _get_event_or_404(db, event_id)
+    await _check_can_view_event(db, event, current_user)
     if not _can_remove_participant(event, driver.user_id, current_user):
         raise HTTPException(status_code=403, detail="Tu ne peux retirer que ta propre inscription.")
     await db.delete(driver)
@@ -846,6 +954,7 @@ async def remove_passenger(
 ) -> Response:
     passenger = await _get_participant_or_404(db, Passenger, event_id, passenger_id)
     event = await _get_event_or_404(db, event_id)
+    await _check_can_view_event(db, event, current_user)
     if not _can_remove_participant(event, passenger.user_id, current_user):
         raise HTTPException(status_code=403, detail="Tu ne peux retirer que ta propre inscription.")
     await db.delete(passenger)
@@ -868,11 +977,12 @@ async def solve_event(
     solve_semaphore: anyio.Semaphore = Depends(get_solve_semaphore),
 ) -> schemas.SolutionOut:
     event = await _load_event_with_participants(db, event_id)
-    # N'importe quel compte connecté peut lancer le calcul (pas réservé à
-    # l'organisateur) : c'est un calcul, pas une modification destructive,
-    # et attendre que l'organisateur s'en occupe freinait inutilement le
-    # groupe. Le cooldown et le plafond ci-dessous protègent déjà contre
-    # l'abus.
+    await _check_can_view_event(db, event, current_user)
+    # N'importe quel compte connecté (approuvé si l'événement l'exige) peut
+    # lancer le calcul (pas réservé à l'organisateur) : c'est un calcul, pas
+    # une modification destructive, et attendre que l'organisateur s'en
+    # occupe freinait inutilement le groupe. Le cooldown et le plafond
+    # ci-dessous protègent déjà contre l'abus.
     drivers = [d for d in event.drivers if d.direction == direction]
     passengers = [p for p in event.passengers if p.direction == direction]
 
@@ -1037,9 +1147,13 @@ async def solve_event(
 
 @router.get("/events/{event_id}/solution", response_model=schemas.SolutionOut)
 async def get_latest_solution(
-    event_id: uuid.UUID, direction: Direction, db: AsyncSession = Depends(get_db)
+    event_id: uuid.UUID,
+    direction: Direction,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
 ) -> schemas.SolutionOut:
-    await _get_event_or_404(db, event_id)
+    event = await _get_event_or_404(db, event_id)
+    await _check_can_view_event(db, event, current_user)
     record = await _load_latest_solution_record_or_404(db, event_id, direction)
     routes_out = [schemas.RouteOut.model_validate(r) for r in record.payload]
 
@@ -1293,6 +1407,45 @@ def _check_owner_or_open(event: Event, current_user: User) -> None:
     est le propriétaire. Lève 403 sinon."""
     if event.owner_id is not None and event.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Seul l'organisateur de cet événement peut faire ça.")
+
+
+async def _check_can_view_event(db: AsyncSession, event: Event, current_user: User | None) -> None:
+    """No-op total tant que `access_mode != "approval"` (le défaut, donc
+    inchangé pour tout événement existant) : seuls les événements qui
+    activent explicitement ce mode passent par la vérification ci-dessous.
+    Autorise l'organisateur (toujours), et un compte dont la demande
+    d'accès a le statut `approved` — lève 403 sinon, y compris pour un
+    visiteur non connecté, sans jamais révéler le nom de l'événement (cf.
+    plan : « tout caché, y compris le nom »)."""
+    if event.access_mode != "approval":
+        return
+    if current_user is not None and event.owner_id == current_user.id:
+        return
+    if current_user is not None:
+        approved = await db.scalar(
+            select(AccessRequest.id).where(
+                AccessRequest.event_id == event.id,
+                AccessRequest.user_id == current_user.id,
+                AccessRequest.status == "approved",
+            )
+        )
+        if approved is not None:
+            return
+    raise HTTPException(status_code=403, detail="Cet événement est privé.")
+
+
+def _access_request_out(request: AccessRequest, requester: User) -> schemas.AccessRequestOut:
+    """`requester` passé explicitement plutôt que rechargé depuis
+    `request.user_id` : les appelants l'ont déjà (soit `current_user`, soit
+    une jointure), pas la peine d'un aller-retour DB de plus."""
+    return schemas.AccessRequestOut(
+        id=request.id,
+        user_id=request.user_id,
+        user_name=requester.name,
+        user_email=requester.email,
+        status=request.status,
+        created_at=request.created_at,
+    )
 
 
 def _can_remove_participant(event: Event, participant_user_id: uuid.UUID | None, current_user: User) -> bool:

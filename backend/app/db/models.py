@@ -11,7 +11,7 @@ import uuid
 from datetime import date as date_
 from datetime import datetime, timezone
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -106,6 +106,12 @@ class Event(Base):
     # DEFAULT_CURRENCY), même principe de défaut partagé que les deux champs
     # ci-dessus.
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # 'open' (par défaut, comportement historique : accessible à quiconque a
+    # le lien) ou 'approval' (accès réservé aux comptes approuvés, cf.
+    # AccessRequest). Contrairement à currency/fuel_price_per_l, jamais nul :
+    # c'est un champ d'autorisation consulté côté serveur à chaque requête,
+    # pas une valeur que le client peut interpréter par défaut.
+    access_mode: Mapped[str] = mapped_column(String(20), default="open")
 
     @property
     def has_cover_image(self) -> bool:
@@ -195,6 +201,28 @@ class SolutionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     event: Mapped["Event"] = relationship(back_populates="solutions")
+
+
+class AccessRequest(Base):
+    """Une demande d'accès à un événement en mode `access_mode = "approval"`
+    (cf. Event). Une seule ligne par (event, user) — contrainte unique,
+    réutilisée en changeant `status` plutôt que dupliquée à chaque nouvelle
+    demande de la même personne (utile si un refus est reconsidéré plus
+    tard). CASCADE sur `user_id` (contrairement à `Driver.user_id`, en SET
+    NULL) : une demande d'accès sans compte connu n'a pas de sens."""
+
+    __tablename__ = "access_requests"
+    __table_args__ = (
+        UniqueConstraint("event_id", "user_id", name="uq_access_requests_event_user"),
+        Index("ix_access_requests_event_id", "event_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
 class EventLog(Base):

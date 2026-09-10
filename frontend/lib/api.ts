@@ -11,6 +11,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export type Direction = "ramassage" | "dispersion";
 
+/** 'open' : accessible à quiconque a le lien (comportement historique).
+ * 'approval' : réservé à l'organisateur et aux comptes approuvés — un
+ * visiteur non approuvé ne voit rien, pas même le nom de l'événement. */
+export type AccessMode = "open" | "approval";
+
 export interface User {
   id: string;
   email: string;
@@ -44,6 +49,7 @@ export interface EventOut {
   /** Devise du partage de frais. Nulle = jamais choisie par l'organisateur —
    * appliquer alors EUR par défaut (cf. lib/cost.ts DEFAULT_CURRENCY). */
   currency: string | null;
+  access_mode: AccessMode;
 }
 
 /** Un événement listé par GET /events, avec le statut du compte connecté
@@ -224,6 +230,7 @@ export function updateEvent(
     fuel_price_per_l?: number | null;
     consumption_l_per_100km?: number | null;
     currency?: string | null;
+    access_mode?: AccessMode;
   } & AddressFields,
 ) {
   return request<EventOut>(`/events/${id}`, { method: "PATCH", body: JSON.stringify(data) });
@@ -231,6 +238,30 @@ export function updateEvent(
 
 export function deleteEvent(id: string) {
   return request<void>(`/events/${id}`, { method: "DELETE" });
+}
+
+export interface AccessRequest {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  status: "pending" | "approved" | "denied";
+  created_at: string;
+}
+
+export function requestAccess(eventId: string) {
+  return request<AccessRequest>(`/events/${eventId}/access-requests`, { method: "POST" });
+}
+
+export function getAccessRequests(eventId: string) {
+  return request<AccessRequest[]>(`/events/${eventId}/access-requests`);
+}
+
+export function updateAccessRequest(eventId: string, requestId: string, status: "approved" | "denied") {
+  return request<AccessRequest>(`/events/${eventId}/access-requests/${requestId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
 }
 
 export function addDriver(

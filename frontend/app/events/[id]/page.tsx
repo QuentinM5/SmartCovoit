@@ -66,8 +66,18 @@ export async function generateMetadata({
       robots: { index: false, follow: false },
     };
   } catch (err) {
+    // 403 : événement en mode "approval", pas encore approuvé pour ce
+    // visiteur — ni le nom ni la description ne doivent fuiter ici, y
+    // compris dans l'aperçu d'un lien partagé (WhatsApp, etc.), cohérent
+    // avec RestrictedEventGate côté page.
+    const title =
+      err instanceof ApiError && err.status === 404
+        ? "Événement introuvable"
+        : err instanceof ApiError && err.status === 403
+          ? "Événement privé"
+          : "Événement";
     return {
-      title: err instanceof ApiError && err.status === 404 ? "Événement introuvable" : "Événement",
+      title,
       alternates: { canonical: `/events/${id}` },
       robots: { index: false, follow: false },
     };

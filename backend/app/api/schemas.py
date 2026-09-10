@@ -16,6 +16,14 @@ from app.solver.model import Direction
 # utilisateurs actuels (Québec + Europe francophone).
 Currency = Literal["EUR", "CAD", "USD", "CHF", "GBP"]
 
+# 'open' : accessible à quiconque a le lien (comportement historique).
+# 'approval' : réservé à l'organisateur et aux comptes approuvés (cf.
+# AccessRequest) — un visiteur non approuvé ne voit rien, pas même le nom
+# de l'événement (choix produit assumé, cf. plan).
+AccessMode = Literal["open", "approval"]
+
+AccessRequestStatus = Literal["pending", "approved", "denied"]
+
 
 class SignupIn(BaseModel):
     email: EmailStr
@@ -113,6 +121,8 @@ class EventOut(BaseModel):
     # le client applique alors EUR (cf. lib/cost.ts DEFAULT_CURRENCY), même
     # principe de défaut partagé que le barème ci-dessus.
     currency: Currency | None = None
+    # 'open' (défaut) ou 'approval' — jamais nul, cf. app.db.models.Event.
+    access_mode: AccessMode = "open"
 
 
 class EventUpdate(Located):
@@ -128,6 +138,7 @@ class EventUpdate(Located):
     fuel_price_per_l: float | None = Field(default=None, gt=0)
     consumption_l_per_100km: float | None = Field(default=None, gt=0)
     currency: Currency | None = None
+    access_mode: AccessMode | None = None
 
 
 class MyEventOut(EventOut):
@@ -288,3 +299,22 @@ class SolutionOut(BaseModel):
     fallback_reason: str | None
     routes: list[RouteOut]
     created_at: datetime
+
+
+class AccessRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    # Nom et email : nécessaires pour que l'organisateur sache à qui il
+    # répond dans le panneau "Demandes en attente" — jamais exposés ailleurs
+    # que sur cet endpoint réservé à l'organisateur (cf. GET
+    # /events/{id}/access-requests, _check_owner_or_open).
+    user_name: str
+    user_email: str
+    status: AccessRequestStatus
+    created_at: datetime
+
+
+class AccessRequestUpdate(BaseModel):
+    status: Literal["approved", "denied"]
