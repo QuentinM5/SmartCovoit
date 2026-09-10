@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { DownloadIcsButton } from "@/components/download-ics-button";
 import { LocationMap } from "@/components/location-map";
+import { QrCodeButton } from "@/components/qr-code-button";
 import { ErrorNote } from "@/components/ui";
 import { coverImageUrl, type Direction, type EventDetail } from "@/lib/api";
 import { formatEventDate } from "@/lib/event-format";
@@ -49,6 +50,7 @@ export function EventHeader({
           <div className="mt-3 flex flex-wrap gap-2">
             <DownloadIcsButton event={event} />
             <CopyLinkButton />
+            <QrCodeButton />
           </div>
         </div>
 
