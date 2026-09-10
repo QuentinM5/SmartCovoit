@@ -87,9 +87,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </head>
-      <body className="min-h-full font-sans antialiased">
+      <body className="flex min-h-screen flex-col font-sans antialiased">
         <TelemetryProvider />
-        <AuthProvider>{children}</AuthProvider>
+        {/* flex-1 absorbe l'espace restant : pousse SiteFooter en bas de
+            l'écran sur une page courte, sans l'empêcher de suivre le flux
+            normal sous un contenu plus long que la fenêtre. */}
+        <div className="flex-1">
+          <AuthProvider>{children}</AuthProvider>
+        </div>
         <SiteFooter />
         <CookieBanner />
       </body>

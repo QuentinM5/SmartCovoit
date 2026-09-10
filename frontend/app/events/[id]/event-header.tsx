@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { DownloadIcsButton } from "@/components/download-ics-button";
@@ -63,7 +63,7 @@ export function EventHeader({
               <img
                 src={coverImageUrl(event.id)}
                 alt=""
-                className="aspect-[4/3] w-28 rounded-lg border border-line object-cover sm:w-36"
+                className="aspect-[4/3] w-32 rounded-lg border border-line object-cover sm:w-44"
               />
               {canManage && (
                 <>
@@ -106,7 +106,7 @@ export function EventHeader({
           <LocationMap
             lat={event.depot_lat}
             lon={event.depot_lon}
-            className="aspect-[4/3] w-28 rounded-lg border border-line sm:w-36"
+            className="aspect-[4/3] w-32 rounded-lg border border-line sm:w-44"
           />
         </div>
       </div>
@@ -126,7 +126,7 @@ export function EventHeader({
           </Link>
           {!event.has_cover_image && (
             <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink">
-              <Pencil className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              <Plus className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
               {uploadingCoverImage ? "Envoi…" : "Ajouter une image"}
               <input
                 type="file"
