@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     # jeton d'identité présenté a bien été émis pour cette appli.
     google_oauth_client_id: str = ""
 
-    # Identifie quelle instance répond (ex. "truenas"/"railway") dans
+    # Identifie quelle instance répond (ex. "truenas"/"digitalocean") dans
     # /health et le journal d'événements — sans ça, impossible de savoir
     # laquelle des deux sert le trafic pendant une bascule de failover.
     instance_name: str = "inconnue"

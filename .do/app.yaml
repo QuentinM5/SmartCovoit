@@ -1,0 +1,42 @@
+# Modèle de spec pour DigitalOcean App Platform — instance de secours du
+# backend (remplace Railway, cf. docs/deploiement.md). Sert de référence
+# reproductible, sur le même principe que railway.json avant lui : construit
+# le même Dockerfile que le TrueNAS (infra/Dockerfile.backend), contexte =
+# racine du dépôt (le Dockerfile fait `COPY backend/...`).
+#
+# Aucune valeur secrète ici (mêmes conventions que .env.example) — les
+# variables marquées SECRET se renseignent dans le tableau de bord DigitalOcean
+# au moment de créer l'app, jamais dans ce fichier. OSRM_URL est absente
+# volontairement : cette instance n'a pas d'OSRM, elle bascule sur Haversine,
+# comme l'ancienne instance Railway.
+name: smartcovoit-backend-secours
+region: tor
+services:
+  - name: backend
+    dockerfile_path: infra/Dockerfile.backend
+    source_dir: /
+    github:
+      repo: QuentinM5/SmartCovoit
+      branch: main
+      deploy_on_push: true
+    http_port: 8000
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    health_check:
+      http_path: /health
+    envs:
+      - key: DATABASE_URL
+        type: SECRET
+      - key: NOMINATIM_USER_AGENT
+        type: GENERAL
+      - key: CORS_ORIGINS
+        type: GENERAL
+      - key: JWT_SECRET
+        type: SECRET
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        type: GENERAL
+      - key: INSTANCE_NAME
+        type: GENERAL
+        value: digitalocean
+      - key: ADMIN_EMAILS
+        type: GENERAL

@@ -35,22 +35,37 @@ distances OSRM réelles) depuis l'extérieur du réseau local.
 Aucune IP ni hostname n'est en dur dans le code — tout passe par les
 variables d'environnement.
 
-## 3. Instance cloud de secours (Railway) — fait ✅
+## 3. Instance cloud de secours (DigitalOcean App Platform) — fait ✅
 
-Déployée depuis le même repo, `infra/Dockerfile.backend` comme Dockerfile via
-`railway.json` à la racine (`build.dockerfilePath`, contexte = racine du repo
-— nécessaire puisque le Dockerfile fait `COPY backend/...`). Variables
-d'environnement renseignées dans l'onglet `Variables` du service (mêmes clés
-que `.env.example`), `OSRM_URL` laissé vide → repli Haversine automatique,
-confirmé (`matrix_source: "haversine"`). Même base Neon que le TrueNAS.
+Railway a d'abord servi de secours, remplacé début septembre 2026 : son essai
+gratuit expiré empêchait de redéployer aux heures de pointe, incompatible
+avec le rôle d'un secours censé pouvoir être reconstruit à tout moment.
 
-**`https://smartcovoit-production.up.railway.app`** — testé de bout en bout
-(création d'événement, conducteur, passager, solve).
+Déployée depuis le même repo, via `infra/Dockerfile.backend` (contexte =
+racine du repo, le Dockerfile fait `COPY backend/...`) — spec de référence
+dans `.do/app.yaml` (sans valeurs secrètes, sur le même principe que
+`.env.example`), créée réellement via l'assistant du tableau de bord
+DigitalOcean. Variables d'environnement copiées telles quelles depuis le
+`.env` du TrueNAS, à une exception près : **`OSRM_URL` doit rester vide** sur
+cette instance (pas d'OSRM ici) → repli Haversine automatique, confirmé
+(`matrix_source: "haversine"`). Même base Neon que le TrueNAS.
+
+⚠️ **`JWT_SECRET` doit être IDENTIQUE à celle du TrueNAS**, pas une valeur
+générée à part pour cette instance — contrairement à ce qu'une version
+antérieure de cette page suggérait. Un jeton de session est signé par
+l'instance qui a traité la connexion et vérifié par celle qui reçoit la
+requête suivante ; avec deux secrets différents, une bascule de failover
+déconnecterait silencieusement quiconque était déjà connecté (401 sur toute
+lecture authentifiée rejouée sur le secours, cf. `worker/src/failover-policy.ts`
+qui rejoue les méthodes sûres). Seule la valeur utilisée en développement
+local doit rester différente de celle de production.
+
+**`<à compléter avec l'URL fournie par DigitalOcean après déploiement>`**
 
 ## 4. Worker Cloudflare (répartiteur) — fait ✅
 
 `worker/wrangler.jsonc` pointe vers les deux instances réelles
-(`PRIMARY_API_URL` = TrueNAS, `FALLBACK_API_URL` = Railway). Déployé via
+(`PRIMARY_API_URL` = TrueNAS, `FALLBACK_API_URL` = DigitalOcean). Déployé via
 `npx wrangler deploy` depuis `/worker`.
 
 **`https://smartcovoit-worker.quentinmeyer57570.workers.dev`** — `/health`
@@ -61,7 +76,7 @@ tant qu'il est en bonne santé.
 Reste à faire, à ta discrétion : un domaine plus lisible que
 `*.workers.dev` (route Worker sur `qmeyer.fr` ou sous-domaine dédié), et
 tester le failover réel (couper le TrueNAS et vérifier que `solve` bascule
-sur Railway avec `matrix_source: "haversine"`).
+sur DigitalOcean avec `matrix_source: "haversine"`).
 
 ## 5. Frontend — fait ✅
 
@@ -128,25 +143,25 @@ sitemap, robots.txt) pointe sur ce domaine depuis le déploiement du
      ```bash
      cd /mnt/Main/apps/smartcovoit && docker compose -f infra/docker-compose.yml --profile osrm up -d
      ```
-   - **Railway** — dashboard → service backend → onglet `Variables` →
-     `CORS_ORIGINS` → `,https://smartcovoit.qmeyer.fr` ajouté à la valeur
-     existante (Railway redéploie automatiquement).
+   - **DigitalOcean** — tableau de bord → app → onglet `Settings` →
+     `App-Level Environment Variables` → `CORS_ORIGINS` mise à jour (redéploie
+     automatiquement).
 
 ## Résumé des variables
 
 | Variable | Où | Valeur |
 |---|---|---|
-| `DATABASE_URL` | TrueNAS + Railway | URL Neon (fait ✅) |
-| `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (vide sur Railway) (fait ✅) |
+| `DATABASE_URL` | TrueNAS + DigitalOcean | URL Neon (fait ✅) |
+| `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (vide sur DigitalOcean) (fait ✅) |
 | `NOMINATIM_USER_AGENT` | les deux | Nom d'app + contact réel (fait ✅) |
 | `CORS_ORIGINS` | les deux | URL(s) du frontend déployé, dont `https://smartcovoit.qmeyer.fr` (fait ✅) |
-| `GOOGLE_ROUTES_API_KEY` | les deux (optionnel) | Clé serveur Google Routes API, distincte de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — vide = pas de trafic temps réel, repli OSRM automatique |
-| `JWT_SECRET` | les deux, **obligatoire** | Valeur aléatoire (`python -c "import secrets; print(secrets.token_urlsafe(32))"`), différente sur chaque environnement, jamais commitée — le backend refuse de démarrer si absente |
+| `GOOGLE_ROUTES_API_KEY` | aucune des deux | Vide partout depuis septembre 2026 (cf. audit facturation) — coupé délibérément, pas juste absent |
+| `JWT_SECRET` | les deux, **obligatoire**, **valeur identique sur TrueNAS et DigitalOcean** | Valeur aléatoire (`python -c "import secrets; print(secrets.token_urlsafe(32))"`), différente seulement de celle utilisée en développement local, jamais commitée — le backend refuse de démarrer si absente. Doit être la même sur les deux instances de production : une session ouverte sur l'une doit rester valide si une bascule de failover la fait vérifier par l'autre |
 | `GOOGLE_OAUTH_CLIENT_ID` | les deux (optionnel) | Identifiant client OAuth Google (public, pas un secret) — vide = connexion Google désactivée côté backend. Créé dans Google Cloud Console (API Credentials > OAuth 2.0 Client ID > type "Web application"), avec les deux origines JavaScript autorisées (`https://smartcovoit.qmeyer.fr` et `https://smartcovoit-frontend.quentinmeyer57570.workers.dev`, cf. les deux origines frontend live) |
 | `PRIMARY_API_URL` | Worker répartiteur | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
-| `FALLBACK_API_URL` | Worker répartiteur | `https://smartcovoit-production.up.railway.app` (fait ✅) |
+| `FALLBACK_API_URL` | Worker répartiteur | URL `*.ondigitalocean.app` de l'app de secours (fait ✅) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `https://smartcovoit-worker.quentinmeyer57570.workers.dev` (fait ✅) |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Frontend | Même valeur que `GOOGLE_OAUTH_CLIENT_ID` — exposée au navigateur pour afficher le bouton Google, ce n'est pas un secret |
-| `INSTANCE_NAME` | les deux (optionnel) | `truenas` / `railway` — distincte sur chaque hôte, sinon `/health` et le journal d'événements ne permettent pas de savoir laquelle des deux instances a répondu |
+| `INSTANCE_NAME` | les deux (optionnel) | `truenas` / `digitalocean` — distincte sur chaque hôte, sinon `/health` et le journal d'événements ne permettent pas de savoir laquelle des deux instances a répondu |
 | `MAX_PARTICIPANTS_PER_EVENT`, `SOLVE_COOLDOWN_S`, `MAX_CONCURRENT_SOLVES`, `MAX_SOLUTIONS_KEPT_PER_DIRECTION` | les deux (optionnels) | Défauts sûrs dans `config.py`, à ajuster seulement si besoin réel constaté |
 | `ADMIN_EMAILS` | les deux (optionnel) | Emails autorisés à lire `GET /admin/stats`, séparés par des virgules — vide = endpoint fermé à tout le monde |
