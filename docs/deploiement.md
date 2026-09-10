@@ -35,19 +35,27 @@ distances OSRM réelles) depuis l'extérieur du réseau local.
 Aucune IP ni hostname n'est en dur dans le code — tout passe par les
 variables d'environnement.
 
-## 3. Instance cloud de secours (DigitalOcean App Platform) — fait ✅
+## 3. Instance cloud de secours (Heroku) — à faire
 
 Railway a d'abord servi de secours, remplacé début septembre 2026 : son essai
 gratuit expiré empêchait de redéployer aux heures de pointe, incompatible
 avec le rôle d'un secours censé pouvoir être reconstruit à tout moment.
+DigitalOcean App Platform devait le remplacer, mais son offre a été retirée
+du pack étudiant GitHub avant la mise en place — Heroku (aussi dans ce pack,
+13 $ de crédit/mois pendant 24 mois) le remplace à sa place.
 
-Déployée depuis le même repo, via `infra/Dockerfile.backend` (contexte =
-racine du repo, le Dockerfile fait `COPY backend/...`) — spec de référence
-dans `.do/app.yaml` (sans valeurs secrètes, sur le même principe que
-`.env.example`), créée réellement via l'assistant du tableau de bord
-DigitalOcean. Variables d'environnement copiées telles quelles depuis le
-`.env` du TrueNAS, à une exception près : **`OSRM_URL` doit rester vide** sur
-cette instance (pas d'OSRM ici) → repli Haversine automatique, confirmé
+À déployer depuis le même repo, via `infra/Dockerfile.backend` (contexte =
+racine du repo, le Dockerfile fait `COPY backend/...`) — `heroku.yml` à la
+racine du dépôt pilote ce build (`build.docker.web`) et recouvre le `CMD` du
+Dockerfile pour écouter sur `$PORT` (assigné dynamiquement par Heroku,
+contrainte propre à cette plateforme) plutôt que sur le port 8000 fixe.
+Nécessite `heroku stack:set container` sur l'app avant le premier déploiement,
+sans quoi Heroku ignore `heroku.yml` et tente un déploiement par buildpack.
+
+Variables d'environnement copiées telles quelles depuis le `.env` du TrueNAS
+(`heroku config:set CLÉ=valeur` ou onglet `Settings` du tableau de bord), à
+une exception près : **`OSRM_URL` ne doit pas être définie** sur cette
+instance (pas d'OSRM ici) → repli Haversine automatique attendu
 (`matrix_source: "haversine"`). Même base Neon que le TrueNAS.
 
 ⚠️ **`JWT_SECRET` doit être IDENTIQUE à celle du TrueNAS**, pas une valeur
@@ -60,12 +68,12 @@ lecture authentifiée rejouée sur le secours, cf. `worker/src/failover-policy.t
 qui rejoue les méthodes sûres). Seule la valeur utilisée en développement
 local doit rester différente de celle de production.
 
-**`<à compléter avec l'URL fournie par DigitalOcean après déploiement>`**
+**`<à compléter avec l'URL fournie par Heroku après déploiement>`**
 
 ## 4. Worker Cloudflare (répartiteur) — fait ✅
 
 `worker/wrangler.jsonc` pointe vers les deux instances réelles
-(`PRIMARY_API_URL` = TrueNAS, `FALLBACK_API_URL` = DigitalOcean). Déployé via
+(`PRIMARY_API_URL` = TrueNAS, `FALLBACK_API_URL` = Heroku). Déployé via
 `npx wrangler deploy` depuis `/worker`.
 
 **`https://smartcovoit-worker.quentinmeyer57570.workers.dev`** — `/health`
@@ -76,7 +84,7 @@ tant qu'il est en bonne santé.
 Reste à faire, à ta discrétion : un domaine plus lisible que
 `*.workers.dev` (route Worker sur `qmeyer.fr` ou sous-domaine dédié), et
 tester le failover réel (couper le TrueNAS et vérifier que `solve` bascule
-sur DigitalOcean avec `matrix_source: "haversine"`).
+sur Heroku avec `matrix_source: "haversine"`).
 
 ## 5. Frontend — fait ✅
 
@@ -143,25 +151,25 @@ sitemap, robots.txt) pointe sur ce domaine depuis le déploiement du
      ```bash
      cd /mnt/Main/apps/smartcovoit && docker compose -f infra/docker-compose.yml --profile osrm up -d
      ```
-   - **DigitalOcean** — tableau de bord → app → onglet `Settings` →
-     `App-Level Environment Variables` → `CORS_ORIGINS` mise à jour (redéploie
-     automatiquement).
+   - **Heroku** — `heroku config:set CORS_ORIGINS=...` ou tableau de bord →
+     app → onglet `Settings` → `Config Vars` → `CORS_ORIGINS` mise à jour
+     (redéploie automatiquement).
 
 ## Résumé des variables
 
 | Variable | Où | Valeur |
 |---|---|---|
-| `DATABASE_URL` | TrueNAS + DigitalOcean | URL Neon (fait ✅) |
-| `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (vide sur DigitalOcean) (fait ✅) |
+| `DATABASE_URL` | TrueNAS + Heroku | URL Neon (fait ✅) |
+| `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (absente sur Heroku) (fait ✅) |
 | `NOMINATIM_USER_AGENT` | les deux | Nom d'app + contact réel (fait ✅) |
 | `CORS_ORIGINS` | les deux | URL(s) du frontend déployé, dont `https://smartcovoit.qmeyer.fr` (fait ✅) |
 | `GOOGLE_ROUTES_API_KEY` | aucune des deux | Vide partout depuis septembre 2026 (cf. audit facturation) — coupé délibérément, pas juste absent |
-| `JWT_SECRET` | les deux, **obligatoire**, **valeur identique sur TrueNAS et DigitalOcean** | Valeur aléatoire (`python -c "import secrets; print(secrets.token_urlsafe(32))"`), différente seulement de celle utilisée en développement local, jamais commitée — le backend refuse de démarrer si absente. Doit être la même sur les deux instances de production : une session ouverte sur l'une doit rester valide si une bascule de failover la fait vérifier par l'autre |
+| `JWT_SECRET` | les deux, **obligatoire**, **valeur identique sur TrueNAS et Heroku** | Valeur aléatoire (`python -c "import secrets; print(secrets.token_urlsafe(32))"`), différente seulement de celle utilisée en développement local, jamais commitée — le backend refuse de démarrer si absente. Doit être la même sur les deux instances de production : une session ouverte sur l'une doit rester valide si une bascule de failover la fait vérifier par l'autre |
 | `GOOGLE_OAUTH_CLIENT_ID` | les deux (optionnel) | Identifiant client OAuth Google (public, pas un secret) — vide = connexion Google désactivée côté backend. Créé dans Google Cloud Console (API Credentials > OAuth 2.0 Client ID > type "Web application"), avec les deux origines JavaScript autorisées (`https://smartcovoit.qmeyer.fr` et `https://smartcovoit-frontend.quentinmeyer57570.workers.dev`, cf. les deux origines frontend live) |
 | `PRIMARY_API_URL` | Worker répartiteur | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
-| `FALLBACK_API_URL` | Worker répartiteur | URL `*.ondigitalocean.app` de l'app de secours (fait ✅) |
+| `FALLBACK_API_URL` | Worker répartiteur | URL `*.herokuapp.com` de l'app de secours (à faire) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `https://smartcovoit-worker.quentinmeyer57570.workers.dev` (fait ✅) |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Frontend | Même valeur que `GOOGLE_OAUTH_CLIENT_ID` — exposée au navigateur pour afficher le bouton Google, ce n'est pas un secret |
-| `INSTANCE_NAME` | les deux (optionnel) | `truenas` / `digitalocean` — distincte sur chaque hôte, sinon `/health` et le journal d'événements ne permettent pas de savoir laquelle des deux instances a répondu |
+| `INSTANCE_NAME` | les deux (optionnel) | `truenas` / `heroku` — distincte sur chaque hôte, sinon `/health` et le journal d'événements ne permettent pas de savoir laquelle des deux instances a répondu |
 | `MAX_PARTICIPANTS_PER_EVENT`, `SOLVE_COOLDOWN_S`, `MAX_CONCURRENT_SOLVES`, `MAX_SOLUTIONS_KEPT_PER_DIRECTION` | les deux (optionnels) | Défauts sûrs dans `config.py`, à ajuster seulement si besoin réel constaté |
 | `ADMIN_EMAILS` | les deux (optionnel) | Emails autorisés à lire `GET /admin/stats`, séparés par des virgules — vide = endpoint fermé à tout le monde |

@@ -1,0 +1,19 @@
+# Déploiement Heroku (build.docker) — instance de secours du backend,
+# remplace DigitalOcean (jamais mis en place, retiré du pack étudiant GitHub
+# avant qu'on ait pu l'utiliser) qui remplaçait déjà Railway avant lui.
+#
+# `web:` pointe sur le même Dockerfile que le TrueNAS et le dev local, avec
+# le même contexte de build (racine du dépôt — le Dockerfile fait
+# `COPY backend/...`), pour ne pas maintenir une seconde image en parallèle.
+#
+# `run.web` recouvre volontairement le CMD du Dockerfile (fixé sur le port
+# 8000) : Heroku assigne son propre port dynamiquement via $PORT et exige
+# que le process s'y attache pour router le trafic, contrainte propre à
+# cette plateforme. `alembic upgrade head` avant `uvicorn` reprend le même
+# filet de sécurité que `infra/docker-compose.yml` (migration déjà faite en
+# amont sur Neon avant tout déploiement, mais idempotente si rejouée ici).
+build:
+  docker:
+    web: infra/Dockerfile.backend
+run:
+  web: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"

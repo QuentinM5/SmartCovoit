@@ -204,7 +204,7 @@ class EventLog(Base):
     journalisé qu'à l'endroit où il est vrai — le serveur sait ce qui a été
     écrit en base, le client sait ce que l'humain a vu et cliqué.
 
-    `instance` (ex. "truenas"/"digitalocean") rend enfin observable quelle instance
+    `instance` (ex. "truenas"/"heroku") rend enfin observable quelle instance
     sert le trafic — la question directe derrière les chantiers de failover.
     Aucune donnée personnelle dans `props` : uniquement des ids et des
     compteurs.
