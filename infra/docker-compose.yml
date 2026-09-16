@@ -17,7 +17,7 @@ services:
   backend:
     build:
       context: ..
-      dockerfile: infra/Dockerfile.backend
+      dockerfile: Dockerfile.backend
     restart: unless-stopped
     ports:
       - "8000:8000"

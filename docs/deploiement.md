@@ -65,9 +65,13 @@ DigitalOcean App Platform devait le remplacer, mais son offre a été retirée
 du pack étudiant GitHub avant la mise en place — Heroku (aussi dans ce pack,
 13 $ de crédit/mois pendant 24 mois) le remplace à sa place.
 
-À déployer depuis le même repo, via `infra/Dockerfile.backend` (contexte =
-racine du repo, le Dockerfile fait `COPY backend/...`) — `heroku.yml` à la
-racine du dépôt pilote ce build (`build.docker.web`) et recouvre le `CMD` du
+À déployer depuis le même repo, via `Dockerfile.backend` à la racine du
+dépôt (le Dockerfile fait `COPY backend/...`) — pas dans `infra/` comme pour
+`docker-compose` : le contexte de build Docker d'Heroku est toujours le
+dossier contenant le Dockerfile, sans possibilité de le configurer
+séparément, contrairement à `docker-compose` (`context`/`dockerfile`
+distincts, cf. `infra/docker-compose.yml`). `heroku.yml` à la racine du
+dépôt pilote ce build (`build.docker.web`) et recouvre le `CMD` du
 Dockerfile pour écouter sur `$PORT` (assigné dynamiquement par Heroku,
 contrainte propre à cette plateforme) plutôt que sur le port 8000 fixe.
 Nécessite `heroku stack:set container` sur l'app avant le premier déploiement,
