@@ -19,7 +19,8 @@ from app.core.config import Settings, get_settings
 from app.core.security import verify_session_token
 from app.db.base import get_session
 from app.db.models import User
-from app.distance.fallback import FallbackMatrixProvider
+from app.distance.mapbox_directions import MapboxDirectionsProvider
+from app.distance.types import MatrixProviderWithGeometry
 from app.geocoding.nominatim import NominatimClient
 
 
@@ -32,8 +33,14 @@ def get_geocoder(request: Request) -> NominatimClient:
     return request.app.state.geocoder
 
 
-def get_matrix_provider(request: Request) -> FallbackMatrixProvider:
+def get_matrix_provider(request: Request) -> MatrixProviderWithGeometry:
     return request.app.state.matrix_provider
+
+
+def get_directions_provider(request: Request) -> MapboxDirectionsProvider | None:
+    """`None` si `MAPBOX_ACCESS_TOKEN` n'est pas configuré -- le trafic par
+    tournée reste alors simplement absent, sans erreur (cf. solve_event)."""
+    return request.app.state.directions_provider
 
 
 def get_solve_semaphore(request: Request) -> anyio.Semaphore:

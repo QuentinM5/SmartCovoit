@@ -76,8 +76,14 @@ sans quoi Heroku ignore `heroku.yml` et tente un déploiement par buildpack.
 Variables d'environnement copiées telles quelles depuis le `.env` du TrueNAS
 (`heroku config:set CLÉ=valeur` ou onglet `Settings` du tableau de bord), à
 une exception près : **`OSRM_URL` ne doit pas être définie** sur cette
-instance (pas d'OSRM ici) → repli Haversine automatique attendu
-(`matrix_source: "haversine"`). Même base Neon que le TrueNAS.
+instance (pas d'OSRM ici). En revanche **`MAPBOX_ACCESS_TOKEN` doit bien y
+être défini** — c'est précisément l'absence d'OSRM sur cette instance qui la
+fait basculer sur le niveau Mapbox de la chaîne de repli
+(`google (sommeil) → osrm → mapbox → haversine`) : sans ce jeton ici, elle
+retomberait directement sur Haversine et le solveur perdrait la matrice de
+durées. `matrix_source: "mapbox"` attendu sur cette instance une fois le
+jeton posé (`"haversine"` seulement s'il venait à manquer). Même base Neon
+que le TrueNAS.
 
 ⚠️ **`JWT_SECRET` doit être IDENTIQUE à celle du TrueNAS**, pas une valeur
 générée à part pour cette instance — contrairement à ce qu'une version
@@ -182,9 +188,11 @@ sitemap, robots.txt) pointe sur ce domaine depuis le déploiement du
 |---|---|---|
 | `DATABASE_URL` | TrueNAS + Heroku | URL Neon (fait ✅) |
 | `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (absente sur Heroku) (fait ✅) |
+| `MAPBOX_ACCESS_TOKEN` | les deux, mais c'est Heroku qui en dépend réellement | Jeton Mapbox — niveau de repli entre OSRM et Haversine (`google (sommeil) → osrm → mapbox → haversine`). Sur Heroku (pas d'OSRM), c'est ce qui répare la matrice de durées du secours ; sur TrueNAS c'est redondant (OSRM répond déjà) mais sans risque à poser aussi, pour homogénéité |
+| `MATRIX_CACHE_TTL_S` | les deux (optionnel) | Durée de vie (s) du cache mémoire posé sur le provider de matrices, absorbe les rappels répétés de move-stop sur les mêmes coordonnées — défaut sûr dans `config.py` (`60`) |
 | `NOMINATIM_USER_AGENT` | les deux | Nom d'app + contact réel (fait ✅) |
 | `CORS_ORIGINS` | les deux | URL(s) du frontend déployé, dont `https://smartcovoit.qmeyer.fr` (fait ✅) |
-| `GOOGLE_ROUTES_API_KEY` | aucune des deux | Vide partout depuis septembre 2026 (cf. audit facturation) — coupé délibérément, pas juste absent |
+| `GOOGLE_ROUTES_API_KEY` | aucune des deux | **En sommeil** : vide partout depuis septembre 2026 (cf. audit facturation) — coupé délibérément, pas juste absent. Mapbox (`MAPBOX_ACCESS_TOKEN` ci-dessus) le remplace comme niveau de secours pour l'instance sans OSRM |
 | `GOOGLE_PLACES_API_KEY` | TrueNAS (optionnel) | Suggestions de points de rassemblement (cf. GET .../meetup-suggestions). ⚠️ **Ne jamais poser cette clé sans avoir fixé un plafond de quota "Nearby Search (New)" dans la console Google Cloud au préalable** — même impératif que Routes API plus haut : cette fonctionnalité rouvre volontairement un risque de facturation, accepté en connaissance de cause (cf. plan). Vide = fonctionnalité absente, sans erreur. |
 | `JWT_SECRET` | les deux, **obligatoire**, **valeur identique sur TrueNAS et Heroku** | Valeur aléatoire (`python -c "import secrets; print(secrets.token_urlsafe(32))"`), différente seulement de celle utilisée en développement local, jamais commitée — le backend refuse de démarrer si absente. Doit être la même sur les deux instances de production : une session ouverte sur l'une doit rester valide si une bascule de failover la fait vérifier par l'autre |
 | `GOOGLE_OAUTH_CLIENT_ID` | les deux (optionnel) | Identifiant client OAuth Google (public, pas un secret) — vide = connexion Google désactivée côté backend. Créé dans Google Cloud Console (API Credentials > OAuth 2.0 Client ID > type "Web application"), avec les deux origines JavaScript autorisées (`https://smartcovoit.qmeyer.fr` et `https://smartcovoit-frontend.quentinmeyer57570.workers.dev`, cf. les deux origines frontend live) |

@@ -2,11 +2,12 @@
 (events_log) et index composite manquant sur solutions.
 
 Purement additive : colonnes nullables, une nouvelle table, des index. Le
-code déployé avant cette migration continue de fonctionner sans y toucher
-(important car Railway ne migre pas la base lui-même — seul TrueNAS exécute
-`alembic upgrade head` au démarrage, cf. docs/deploiement.md) ; c'est donc
-cette migration qui doit être appliquée AVANT tout redéploiement de code qui
-en dépend, jamais l'inverse.
+code déployé avant cette migration continue de fonctionner sans y toucher ;
+c'est donc cette migration qui doit être appliquée AVANT tout redéploiement
+de code qui en dépend, jamais l'inverse (les deux instances backend, TrueNAS
+et Heroku, exécutent `alembic upgrade head` à chaque démarrage/release, cf.
+docs/deploiement.md, mais rien ne garantit qu'elles redémarrent en même
+temps).
 
 Revision ID: 0006
 Revises: 0005

@@ -10,8 +10,10 @@ npm install
 npm run dev
 ```
 
-Nécessite `NEXT_PUBLIC_API_URL` dans `.env.local` (cf. `.env.local` déjà
-présent en local, pointant vers `http://localhost:8000`).
+Nécessite `NEXT_PUBLIC_API_URL` dans `.env.development.local` (pointant vers
+`http://localhost:8000`) — pas `.env.local`, qui est aussi chargé pendant
+les builds de production et primerait silencieusement sur
+`.env.production` (cf. `docs/deploiement.md`).
 
 ## Structure
 

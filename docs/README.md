@@ -53,7 +53,9 @@ des variables d'environnement, jamais en dur dans le code.
 |---|---|---|
 | `DATABASE_URL` | Connexion Postgres (Neon en prod, format libpq accepté — `sslmode=require` géré automatiquement) | Postgres local du docker-compose |
 | `OSRM_URL` | URL du service OSRM `table` endpoint. Vide = repli Haversine direct, sans avertissement | (vide) |
-| `GOOGLE_ROUTES_API_KEY` | Clé serveur Google Routes API (trafic temps réel). Vide = repli OSRM direct, sans avertissement. Distincte de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (navigateur) | (vide) |
+| `GOOGLE_ROUTES_API_KEY` | Clé serveur Google Routes API (trafic temps réel). Vide = repli OSRM direct, sans avertissement. Distincte de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (navigateur). **En sommeil** : vide partout en production depuis septembre 2026 (décision de facturation, le SKU "Pro" facturé au trafic coûtait ~17$ par calcul à 40 participants) — le code reste en place mais ce niveau n'est plus utilisé | (vide) |
+| `MAPBOX_ACCESS_TOKEN` | Jeton Mapbox, niveau de repli entre OSRM et Haversine. Sert à deux clients : la matrice de durées/distances typiques sans trafic (`MapboxMatrixProvider`, répare le secours sans OSRM) et le trafic + tracé routier par tournée finale (`MapboxDirectionsProvider`, un appel par tournée retenue — le profil `driving-traffic` de Mapbox est plafonné à 10 coordonnées par requête, une matrice complète serait donc infaisable en temps). Vide = niveau(x) sauté(s) silencieusement | (vide) |
+| `MATRIX_CACHE_TTL_S` | Durée de vie (s) du cache mémoire posé sur le provider de matrices — absorbe les rappels répétés de move-stop (glisser-déposer) sur les mêmes coordonnées | `60` |
 | `NOMINATIM_URL` | Instance Nominatim à interroger | instance publique OpenStreetMap |
 | `NOMINATIM_USER_AGENT` | Identifiant requis par la politique d'usage Nominatim | — |
 | `SOLVER_TIME_LIMIT_S` | Limite de temps (s) laissée à OR-Tools | `10` |

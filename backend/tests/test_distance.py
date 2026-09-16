@@ -17,10 +17,12 @@ import respx
 from app.distance.fallback import FallbackMatrixProvider
 from app.distance.google_routes import GoogleRoutesProvider
 from app.distance.haversine import HaversineProvider, haversine_m
+from app.distance.mapbox_matrix import MapboxMatrixProvider
 from app.distance.osrm import OSRMProvider
 from app.distance.types import Coord
 
 GOOGLE_MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
+MAPBOX_MATRIX_URL_RE = re.compile(r"https://api\.mapbox\.com/directions-matrix/v1/mapbox/driving/.*")
 
 PARIS = Coord(48.8566, 2.3522)
 LYON = Coord(45.7640, 4.8357)
@@ -105,18 +107,36 @@ async def test_fallback_goes_directly_to_haversine_when_osrm_not_configured():
     assert result.fallback_reason is None
 
 
-# --- Chaîne à trois niveaux : Google -> OSRM -> Haversine -------------------
+# --- Chaîne à quatre niveaux : Google -> OSRM -> Mapbox -> Haversine -------
 
 _GOOGLE_OK = [
     {"originIndex": 0, "destinationIndex": 1, "distanceMeters": 500, "duration": "60s", "condition": "ROUTE_EXISTS"},
     {"originIndex": 1, "destinationIndex": 0, "distanceMeters": 500, "duration": "65s", "condition": "ROUTE_EXISTS"},
 ]
 
+_MAPBOX_OK = {
+    "code": "Ok",
+    "distances": [[0, 392000], [392000, 0]],
+    "durations": [[0, 14500], [14500, 0]],
+}
+
+
+def _full_chain_provider(**overrides) -> FallbackMatrixProvider:
+    """Provider avec les quatre niveaux configurés par défaut -- chaque test
+    ne surcharge que ce qu'il veut faire échouer/absenter."""
+    defaults = dict(
+        osrm=OSRMProvider(base_url="http://osrm.local"),
+        google=GoogleRoutesProvider(api_key="k"),
+        mapbox=MapboxMatrixProvider(access_token="tok"),
+    )
+    defaults.update(overrides)
+    return FallbackMatrixProvider(**defaults)
+
 
 async def test_fallback_prefers_google_when_configured():
     with respx.mock() as router:
         router.post(GOOGLE_MATRIX_URL).mock(return_value=httpx.Response(200, json=_GOOGLE_OK))
-        provider = FallbackMatrixProvider(osrm=None, google=GoogleRoutesProvider(api_key="k"))
+        provider = _full_chain_provider()
         result = await provider.matrix(COORDS)
 
     assert result.source == "google"
@@ -136,10 +156,7 @@ async def test_fallback_from_google_to_osrm_when_google_fails():
                 },
             )
         )
-        provider = FallbackMatrixProvider(
-            osrm=OSRMProvider(base_url="http://osrm.local"),
-            google=GoogleRoutesProvider(api_key="k"),
-        )
+        provider = _full_chain_provider()
         result = await provider.matrix(COORDS)
 
     assert result.source == "osrm"
@@ -148,19 +165,58 @@ async def test_fallback_from_google_to_osrm_when_google_fails():
     assert result.fallback_reason is None
 
 
-async def test_fallback_from_google_and_osrm_to_haversine():
+async def test_fallback_from_google_and_osrm_to_mapbox():
     with respx.mock() as router:
         router.post(GOOGLE_MATRIX_URL).mock(return_value=httpx.Response(403, text="quota"))
         router.get(re.compile(r"http://osrm\.local/.*")).mock(side_effect=httpx.ConnectError("refused"))
-        provider = FallbackMatrixProvider(
-            osrm=OSRMProvider(base_url="http://osrm.local"),
-            google=GoogleRoutesProvider(api_key="k"),
-        )
+        router.get(MAPBOX_MATRIX_URL_RE).mock(return_value=httpx.Response(200, json=_MAPBOX_OK))
+        provider = _full_chain_provider()
+        result = await provider.matrix(COORDS)
+
+    assert result.source == "mapbox"
+    # Mapbox a réussi : pas de raison à afficher, même logique que pour OSRM.
+    assert result.fallback_reason is None
+    assert result.durations == [[0, 14500], [14500, 0]]
+
+
+async def test_fallback_from_google_osrm_and_mapbox_to_haversine():
+    with respx.mock() as router:
+        router.post(GOOGLE_MATRIX_URL).mock(return_value=httpx.Response(403, text="quota"))
+        router.get(re.compile(r"http://osrm\.local/.*")).mock(side_effect=httpx.ConnectError("refused"))
+        router.get(MAPBOX_MATRIX_URL_RE).mock(return_value=httpx.Response(401, text="invalid token"))
+        provider = _full_chain_provider()
         result = await provider.matrix(COORDS)
 
     assert result.source == "haversine"
+    # Le dernier niveau essayé avant Haversine est Mapbox : sa raison prime.
     assert result.fallback_reason is not None
+    assert "401" in result.fallback_reason
     assert result.distances[0][1] == haversine_m(PARIS, LYON)
+
+
+async def test_fallback_uses_mapbox_when_google_and_osrm_absent():
+    """Mapbox répare le secours Heroku (sans OSRM, sans clé Google) : seul
+    niveau payant configuré, il doit être utilisé directement, sans warning
+    ni fallback_reason -- rien n'a échoué avant lui."""
+    with respx.mock() as router:
+        router.get(MAPBOX_MATRIX_URL_RE).mock(return_value=httpx.Response(200, json=_MAPBOX_OK))
+        provider = FallbackMatrixProvider(osrm=None, google=None, mapbox=MapboxMatrixProvider(access_token="tok"))
+        result = await provider.matrix(COORDS)
+
+    assert result.source == "mapbox"
+    assert result.fallback_reason is None
+    assert result.durations == [[0, 14500], [14500, 0]]
+
+
+async def test_fallback_no_reason_when_no_paid_level_configured():
+    """Invariant à préserver avec le quatrième niveau : sans AUCUN niveau
+    payant configuré (google/osrm/mapbox à None), Haversine est utilisé
+    directement, sans fallback_reason -- ce n'est pas une panne."""
+    provider = FallbackMatrixProvider(osrm=None, google=None, mapbox=None)
+    result = await provider.matrix(COORDS)
+
+    assert result.source == "haversine"
+    assert result.fallback_reason is None
 
 
 # --- Tracé routier (route_geometry) ---------------------------------------

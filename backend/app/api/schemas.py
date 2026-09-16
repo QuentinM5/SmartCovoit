@@ -270,6 +270,12 @@ class RouteOut(BaseModel):
     driver_name: str
     distance_m: int
     duration_s: int | None = None
+    # Durée avec trafic, obtenue séparément du solveur (cf. solve_event et
+    # MapboxDirectionsProvider) : le solveur affecte sur une matrice sans
+    # trafic, ce champ reflète le "pars à telle heure" réel pour cette
+    # tournée. Absent si Mapbox n'est pas configuré ou indisponible -- le
+    # client retombe alors sur `duration_s`.
+    traffic_duration_s: int | None = None
     stops: list[StopOut]
     # Tracé routier réel (suite de points [lat, lon]) pour l'affichage sur la
     # carte. Absent si OSRM n'est pas disponible — le client relie alors les

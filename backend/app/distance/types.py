@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-MatrixSource = Literal["google", "osrm", "haversine"]
+MatrixSource = Literal["google", "osrm", "mapbox", "haversine"]
 
 # Suite de points (lat, lon) décrivant un tracé sur la carte.
 Polyline = list[list[float]]
@@ -46,3 +46,15 @@ class MatrixProvider(Protocol):
     """Un provider sait transformer une liste de coordonnées en matrice de distances."""
 
     async def matrix(self, coords: list[Coord]) -> MatrixResult: ...
+
+
+class MatrixProviderWithGeometry(Protocol):
+    """Ce que `routes.py` attend réellement : une matrice, et un tracé routier
+    pour l'affichage. `FallbackMatrixProvider` et `CachedMatrixProvider`
+    (cf. cache.py) satisfont tous les deux ce contrat -- le second peut donc
+    se substituer au premier sur `app.state.matrix_provider` sans toucher aux
+    annotations de type des endpoints.
+    """
+
+    async def matrix(self, coords: list[Coord]) -> MatrixResult: ...
+    async def route_geometry(self, coords: list[Coord]) -> Polyline | None: ...

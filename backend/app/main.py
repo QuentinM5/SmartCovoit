@@ -18,9 +18,12 @@ from app.api.routes import router
 from app.core.config import get_settings
 from app.db.base import get_sessionmaker
 from app.db.geocode_cache_repo import SqlGeocodeCache
+from app.distance.cache import CachedMatrixProvider
 from app.distance.fallback import FallbackMatrixProvider
 from app.distance.google_routes import GoogleRoutesProvider
 from app.distance.haversine import HaversineProvider
+from app.distance.mapbox_directions import MapboxDirectionsProvider
+from app.distance.mapbox_matrix import MapboxMatrixProvider
 from app.distance.osrm import OSRMProvider
 from app.geocoding.nominatim import NominatimClient
 
@@ -42,10 +45,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if settings.google_routes_api_key
         else None
     )
-    app.state.matrix_provider = FallbackMatrixProvider(
+    mapbox = (
+        MapboxMatrixProvider(access_token=settings.mapbox_access_token)
+        if settings.mapbox_access_token
+        else None
+    )
+    fallback_provider = FallbackMatrixProvider(
         osrm=osrm,
         haversine=HaversineProvider(road_factor=settings.haversine_road_factor),
         google=google,
+        mapbox=mapbox,
+    )
+    app.state.matrix_provider = CachedMatrixProvider(
+        inner=fallback_provider, ttl_s=settings.matrix_cache_ttl_s
+    )
+    app.state.directions_provider = (
+        MapboxDirectionsProvider(access_token=settings.mapbox_access_token)
+        if settings.mapbox_access_token
+        else None
     )
 
     # Borne le nombre de solves OR-Tools concurrents (cf. Settings.max_concurrent_solves) —

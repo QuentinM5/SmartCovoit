@@ -12,8 +12,17 @@ Un événement devient un problème de VRP capacitaire (`ortools.constraint_solv
   produit simplement un trajet direct entre ses deux extrémités.
 - **Capacité** : la dimension `Capacity` d'OR-Tools, demande de `1` par
   passager, capacité par véhicule = places déclarées par son conducteur.
-- **Objectif** : un seul critère, minimiser la distance totale parcourue par
-  l'ensemble de la flotte (`SetArcCostEvaluatorOfAllVehicles`).
+- **Objectif** : minimiser la durée totale de trajet de l'ensemble de la
+  flotte (`SetArcCostEvaluatorOfAllVehicles`) quand une matrice de durées est
+  disponible (`duration_matrix` dans `SolveRequest`), sinon la distance
+  totale — cf. `backend/app/solver/vrp.py`, `cost_matrix = duration_matrix if
+  duration_matrix is not None else matrix`. La matrice de durées vient de
+  OSRM, Mapbox ou Google selon la chaîne de repli (`google (sommeil) → osrm →
+  mapbox → haversine` — Haversine seul n'en fournit pas, une ligne droite
+  n'a pas de durée de circulation). La distance, elle, reste toujours
+  renseignée quelle que soit la source et sert de vérité affichée en km
+  (cf. `MatrixResult` dans `backend/app/distance/types.py`) — mais ce n'est
+  plus elle que le solveur minimise dès qu'une matrice de durées existe.
 
 ## `direction`
 
@@ -40,9 +49,10 @@ traversé par le conducteur B.
 ## Étendre plus tard (hors scope V1, code structuré pour)
 
 - **Fenêtres de temps (VRPTW)** : ajouter une dimension `Time` (comme
-  `Capacity`), avec `AddDimension` et des bornes horaires par nœud. Le
-  modèle actuel n'a pas de notion de temps de trajet, seulement de distance
-  — il faudrait une seconde matrice (durées) en plus de celle des distances.
+  `Capacity`), avec `AddDimension` et des bornes horaires par nœud. La
+  matrice de durées existe déjà (cf. `Objectif` ci-dessus, c'est elle que le
+  solveur minimise) — il n'y a donc pas de seconde matrice à introduire pour
+  ça, seulement la dimension `Time` et les contraintes horaires elles-mêmes.
 - **Regroupements** : contraintes de type `AddDisjunction` ou des
   contraintes de précédence pour garder des sous-groupes ensemble.
 - **Exclusion de conducteurs en trop** : actuellement tous les conducteurs

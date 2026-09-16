@@ -4,7 +4,7 @@
  *
  * Un 5xx est une RÉPONSE : le primaire a reçu la requête et l'a
  * probablement traitée (ex. la ligne a bien été insérée, mais la réponse a
- * échoué après coup). La rejouer sur Railway, contre la même base
+ * échoué après coup). La rejouer sur Heroku, contre la même base
  * partagée, est exactement ce qui crée les doublons — donc pour une
  * méthode qui écrit (POST/PATCH/DELETE), on ne rejoue pas un 5xx, on
  * renvoie tel quel.

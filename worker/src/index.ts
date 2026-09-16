@@ -16,7 +16,7 @@
  * ouverte sans répondre (le cas d'un backend injoignable échoue déjà vite,
  * bien avant ce délai) — fixé largement au-dessus de `SOLVER_TIME_LIMIT_S`
  * (10s) + appel Google Routes + tracés OSRM par tournée, pour ne pas
- * basculer sur Railway (sans OSRM, donc sans tracé réel) simplement parce
+ * basculer sur Heroku (sans OSRM, donc sans tracé réel) simplement parce
  * qu'un `/solve` à plusieurs passagers a mis un peu plus de temps que prévu
  * sur le matériel partagé du TrueNAS.
  *

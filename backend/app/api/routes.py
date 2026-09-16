@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import TypeVar
@@ -27,6 +28,7 @@ from app.api.deps import (
     get_admin_user,
     get_current_user,
     get_db,
+    get_directions_provider,
     get_geocoder,
     get_matrix_provider,
     get_optional_user,
@@ -41,10 +43,10 @@ from app.core.security import (
 )
 from app.db.event_log import log_event, log_event_now
 from app.db.models import AccessRequest, Driver, Event, EventLog, Passenger, SolutionRecord, User
-from app.distance.fallback import FallbackMatrixProvider
 from app.distance.google_places import GooglePlacesClient, GooglePlacesError
 from app.distance.haversine import haversine_m
-from app.distance.types import Coord, Polyline
+from app.distance.mapbox_directions import MapboxDirectionsError, MapboxDirectionsProvider
+from app.distance.types import Coord, MatrixProviderWithGeometry, Polyline
 from app.geocoding.nominatim import NominatimClient
 from app.geocoding.types import GeocodingError
 from app.impact import co2_saved_kg
@@ -52,6 +54,8 @@ from app.meetup_clustering import centroid, cluster_nearby_stops
 from app.solver.errors import SolverError
 from app.solver.model import Direction, DriverSpec, PassengerSpec, Route as SolverRoute, SolveRequest
 from app.solver.vrp import solve
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -974,7 +978,8 @@ async def solve_event(
     direction: Direction,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    matrix_provider: FallbackMatrixProvider = Depends(get_matrix_provider),
+    matrix_provider: MatrixProviderWithGeometry = Depends(get_matrix_provider),
+    directions_provider: MapboxDirectionsProvider | None = Depends(get_directions_provider),
     settings: Settings = Depends(get_settings),
     solve_semaphore: anyio.Semaphore = Depends(get_solve_semaphore),
 ) -> schemas.SolutionOut:
@@ -1079,17 +1084,32 @@ async def solve_event(
     passenger_uuid_by_str = {str(p.id): p.id for p in passengers}
     passenger_name_by_str = {str(p.id): p.name for p in passengers}
 
-    # Tracés routiers réels, en parallèle : purement pour l'affichage, et
-    # renvoyés à `None` un par un si OSRM ne suit pas (cf. FallbackMatrixProvider).
-    # Bornée à 4 en vol plutôt qu'un gather sans limite : un événement à
-    # 40 conducteurs ne doit pas ouvrir 40 requêtes OSRM/Google d'un coup.
+    # Tracés routiers réels et durée avec trafic, en parallèle : purement
+    # pour l'affichage, jamais fatals si indisponibles (cf.
+    # FallbackMatrixProvider et MapboxDirectionsProvider). Bornée à 4 en vol
+    # plutôt qu'un gather sans limite : un événement à 40 conducteurs ne doit
+    # pas ouvrir 40 requêtes d'un coup.
     geometry_semaphore = asyncio.Semaphore(4)
 
-    async def _bounded_route_geometry(route: SolverRoute) -> Polyline | None:
+    async def _bounded_route_geometry(route: SolverRoute) -> tuple[Polyline | None, int | None]:
         async with geometry_semaphore:
-            return await matrix_provider.route_geometry([coords[stop.node] for stop in route.stops])
+            route_coords = [coords[stop.node] for stop in route.stops]
+            # Mapbox Directions donne à la fois le trafic et le tracé, avec
+            # un budget de requêtes bien plus généreux (facturé à la requête,
+            # pas à l'élément) : quand il est configuré, il prime sur le
+            # tracé OSRM/Google pour CETTE tournée précise.
+            if directions_provider is not None:
+                try:
+                    traffic_route = await directions_provider.route(route_coords)
+                    return traffic_route.geometry, traffic_route.duration_s
+                except MapboxDirectionsError as exc:
+                    logger.warning("Trafic/tracé Mapbox indisponible, repli tracé matrice : %s", exc)
+            geometry = await matrix_provider.route_geometry(route_coords)
+            return geometry, None
 
-    geometries = await asyncio.gather(*(_bounded_route_geometry(route) for route in solution.routes))
+    geometry_results = await asyncio.gather(
+        *(_bounded_route_geometry(route) for route in solution.routes)
+    )
 
     routes_out = [
         schemas.RouteOut(
@@ -1097,6 +1117,7 @@ async def solve_event(
             driver_name=route.driver_name,
             distance_m=route.distance_m,
             duration_s=route.duration_s,
+            traffic_duration_s=traffic_duration_s,
             geometry=geometry,
             stops=[
                 schemas.StopOut(
@@ -1113,7 +1134,7 @@ async def solve_event(
                 for stop in route.stops
             ],
         )
-        for route, geometry in zip(solution.routes, geometries)
+        for route, (geometry, traffic_duration_s) in zip(solution.routes, geometry_results)
     ]
 
     record = SolutionRecord(
@@ -1237,7 +1258,7 @@ async def move_stop(
     body: schemas.MoveStopIn,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    matrix_provider: FallbackMatrixProvider = Depends(get_matrix_provider),
+    matrix_provider: MatrixProviderWithGeometry = Depends(get_matrix_provider),
     settings: Settings = Depends(get_settings),
 ) -> schemas.SolutionOut:
     """Déplace un passager vers une tournée après un calcul (glisser-déposer
@@ -1356,7 +1377,7 @@ async def move_stop(
     durations = [r.duration_s for r in new_routes]
     total_duration = sum(durations) if all(d is not None for d in durations) else None  # type: ignore[arg-type]
 
-    source_priority = {"google": 0, "osrm": 1, "haversine": 2}
+    source_priority = {"google": 0, "osrm": 1, "mapbox": 2, "haversine": 3}
     worst_source = max(sources_used, key=lambda s: source_priority[s])
     combined_fallback_reason = next((r for r in fallback_reasons if r), None)
 
@@ -1619,7 +1640,7 @@ def _stop_coord(stop: schemas.StopOut, event: Event, route_driver: Driver) -> Co
 
 
 async def _reinsert_passenger(
-    matrix_provider: FallbackMatrixProvider,
+    matrix_provider: MatrixProviderWithGeometry,
     base_stops: list[schemas.StopOut],
     base_coords: list[Coord],
     passenger: Passenger,
@@ -1686,7 +1707,7 @@ async def _reinsert_passenger(
 
 
 async def _recompute_fixed_order(
-    matrix_provider: FallbackMatrixProvider,
+    matrix_provider: MatrixProviderWithGeometry,
     stops: list[schemas.StopOut],
     coords: list[Coord],
 ) -> tuple[list[schemas.StopOut], int, int | None, str, str | None, list[list[float]] | None]:

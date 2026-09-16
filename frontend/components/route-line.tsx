@@ -30,6 +30,7 @@ export function RouteLine({
   seats,
   distanceM,
   durationS,
+  trafficDurationS,
   cost,
   currency,
   stops,
@@ -47,6 +48,10 @@ export function RouteLine({
   seats: number;
   distanceM: number;
   durationS?: number | null;
+  /** Durée avec trafic (secondes), distincte de `durationS` (celle utilisée
+   * par le solveur, sans trafic). Prioritaire sur `durationS` à l'affichage
+   * quand elle est disponible. */
+  trafficDurationS?: number | null;
   /** Coût estimé de cette tournée (barème de l'événement) — absent si aucun
    * partage de frais n'est configuré. */
   cost?: number | null;
@@ -69,6 +74,7 @@ export function RouteLine({
 }) {
   const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
   const mapsUrl = googleMapsDirectionsUrl(stops);
+  const displayDurationS = trafficDurationS ?? durationS;
   const passengerCount = stops.filter((s) => s.kind === "passenger").length;
   const truncated = Math.max(0, stops.length - 2 - MAX_WAYPOINTS);
   const overCapacity = passengerCount > seats;
@@ -107,9 +113,10 @@ export function RouteLine({
           {driverName}
         </h3>
         <p className="tabular text-sm text-muted">
-          {durationS != null ? (
+          {displayDurationS != null ? (
             <>
-              <span className="font-mono text-ink">{formatDuration(durationS)}</span>
+              <span className="font-mono text-ink">{formatDuration(displayDurationS)}</span>
+              {trafficDurationS != null && <span className="text-xs"> (trafic)</span>}
               <span aria-hidden="true"> · </span>
               <span className="font-mono">{formatDistance(distanceM)}</span>
             </>

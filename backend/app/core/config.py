@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     # séparément, à son propre plafond de quota côté console.
     google_places_api_key: str = ""
 
+    # Vide = pas de niveau Mapbox -> repli direct sur Haversine si OSRM est
+    # aussi absent, sans warning. Utilisé pour la matrice de secours (sans
+    # trafic, cf. mapbox_matrix.py) et pour le trafic + tracé par tournée
+    # finale (cf. mapbox_directions.py) : une seule clé pour les deux usages.
+    mapbox_access_token: str = ""
+
+    # Durée de vie du cache mémoire posé sur le provider de matrices (cf.
+    # app/distance/cache.py) : absorbe les rappels répétés de move-stop sur
+    # les mêmes coordonnées sans jamais servir un résultat trop vieux.
+    matrix_cache_ttl_s: int = 60
+
     nominatim_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "smartcovoit/1.0 (set NOMINATIM_USER_AGENT with contact info)"
 

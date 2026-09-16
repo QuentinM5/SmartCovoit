@@ -4,8 +4,10 @@ Purement additive : une colonne nullable. Nulle = jamais choisie par
 l'organisateur, le client applique alors EUR par défaut (cf.
 frontend/lib/cost.ts DEFAULT_CURRENCY) — même principe de défaut partagé que
 fuel_price_per_l/consumption_l_per_100km (migration 0006). À appliquer sur
-Neon AVANT tout redéploiement de code qui en dépend (Railway ne migre pas la
-base lui-même, cf. docs/deploiement.md).
+Neon AVANT tout redéploiement de code qui en dépend (les deux instances
+backend, TrueNAS et Heroku, exécutent `alembic upgrade head` à chaque
+démarrage/release, cf. docs/deploiement.md, mais rien ne garantit qu'elles
+redémarrent en même temps).
 
 Revision ID: 0007
 Revises: 0006

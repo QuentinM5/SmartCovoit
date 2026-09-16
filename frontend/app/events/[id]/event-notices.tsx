@@ -20,7 +20,7 @@ export function SourceBanner({ source }: { source: Solution["matrix_source"] }) 
       </p>
     );
   }
-  if (source === "osrm") {
+  if (source === "osrm" || source === "mapbox") {
     return (
       <p className="rounded-md border border-line bg-surface px-3 py-2 text-xs leading-relaxed text-muted">
         Trajets optimisés sur le temps de trajet typique (hors trafic en temps réel).

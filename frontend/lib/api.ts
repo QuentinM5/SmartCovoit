@@ -102,6 +102,13 @@ export interface Route {
   driver_name: string;
   distance_m: number;
   duration_s?: number | null;
+  /**
+   * Durée avec trafic (secondes), distincte de `duration_s` (durée utilisée
+   * par le solveur, sans trafic). Absent si Mapbox n'est pas configuré ou
+   * indisponible pour cette tournée -- le client retombe alors sur
+   * `duration_s`.
+   */
+  traffic_duration_s?: number | null;
   stops: Stop[];
   /**
    * Tracé routier réel, suite de points [lat, lon]. Absent quand OSRM n'est pas
@@ -117,7 +124,7 @@ export interface Solution {
   direction: Direction;
   total_distance_m: number;
   total_duration_s?: number | null;
-  matrix_source: "google" | "osrm" | "haversine";
+  matrix_source: "google" | "osrm" | "mapbox" | "haversine";
   fallback_reason: string | null;
   routes: Route[];
   created_at: string;

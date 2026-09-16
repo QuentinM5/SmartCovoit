@@ -91,6 +91,7 @@ export function RoutesSection({
               seats={driver?.seats ?? 0}
               distanceM={route.distance_m}
               durationS={route.duration_s}
+              trafficDurationS={route.traffic_duration_s}
               cost={routeCostEuros(route.distance_m, costParams)}
               currency={event.currency}
               stops={mapRoutes[index]?.stops ?? []}
