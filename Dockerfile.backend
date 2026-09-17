@@ -11,7 +11,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir --upgrade pip
 
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.11-slim
 
@@ -23,8 +23,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+# Site-packages système plutôt que `pip install --user` + `/root/.local` :
+# Heroku (container stack) exécute le conteneur SANS privilèges root, avec un
+# $HOME différent de `/root` -- `/root/.local` y devient invisible pour
+# l'utilisateur réel, d'où un `ModuleNotFoundError` sur alembic au tout
+# premier déploiement. Les deux stages partagent la même image de base
+# (python:3.11-slim), donc le chemin des site-packages est identique des
+# deux côtés, indépendamment de l'utilisateur qui exécute le conteneur.
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 ENV PYTHONUNBUFFERED=1
 
 COPY backend/ .
