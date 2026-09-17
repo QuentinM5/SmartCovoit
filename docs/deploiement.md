@@ -168,6 +168,7 @@ Versions de référence (garder à jour en cas de changement majeur) :
 
 | Version | Contenu |
 |---|---|
+| `7cb6f570-25c9-4062-9eb4-ab4c68ad1b21` | Refonte initiale de la page événement, avant les correctifs noms longs, sections repliables et métro. |
 | `388185a2-568d-4509-bedb-c228cf1de0ed` | Version active avant la refonte de la page événement : point de retour arrière immédiat. |
 | `e9e7cad5-8682-4510-912e-408b70585e81` | Onglets aller/retour fusionnés + bloc « Qui est tout près », **sans** la passe de finition visuelle. Point de retour sûr avant la branche `design/ui-polish-2026-09`. |
 
@@ -217,8 +218,7 @@ sitemap, robots.txt) pointe sur ce domaine depuis le déploiement du
 ## Résumé des variables
 
 | Variable | Où | Valeur |
-|---|---|
-| `388185a2-568d-4509-bedb-c228cf1de0ed` | Version active avant la refonte de la page événement : point de retour arrière immédiat. |---|
+|---|---|---|
 | `DATABASE_URL` | TrueNAS + Heroku | URL Neon (fait ✅) |
 | `OSRM_URL` | TrueNAS uniquement | `http://osrm:5000` (absente sur Heroku) (fait ✅) |
 | `MAPBOX_ACCESS_TOKEN` | les deux, mais c'est Heroku qui en dépend réellement | Jeton Mapbox — niveau de repli entre OSRM et Haversine (`google (sommeil) → osrm → mapbox → haversine`). Sur Heroku (pas d'OSRM), c'est ce qui répare la matrice de durées du secours ; sur TrueNAS c'est redondant (OSRM répond déjà) mais sans risque à poser aussi, pour homogénéité |

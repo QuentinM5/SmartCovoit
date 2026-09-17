@@ -41,7 +41,7 @@ export function EventHeader({
           ça place naturellement l'image et la mini-carte sous le titre ;
           à partir de `sm:` (ligne), le titre se retrouve à gauche et les
           visuels à droite — sans dupliquer le balisage pour chaque taille. */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:gap-6">
         <div className="min-w-0 flex-1">
           <h1 className="text-3xl leading-[1.1] font-semibold tracking-tight sm:text-4xl lg:text-5xl">
             {event.name}
@@ -67,13 +67,12 @@ export function EventHeader({
           </div>
         </div>
 
-        {/* Deux vignettes au format proche d'une photo standard (4:3), pas
-            la bannière large utilisée dans une version précédente — l'image
-            (si présente) et le point de rendez-vous : la carte des trajets
-            complète (RouteMap) vient plus bas, une fois un calcul fait. */}
-        <div className="flex shrink-0 gap-2">
+        {/* La couverture garde son format photo ; sur grand écran, la carte
+            occupe le reste de la colonne pour mieux situer le rendez-vous.
+            La carte des trajets complète (RouteMap) vient plus bas. */}
+        <div className="flex shrink-0 items-start gap-2 lg:min-w-0">
           {event.has_cover_image && (
-            <div className="group relative">
+            <div className="group relative shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element -- servie par le backend, pas next/image (cas d'usage trop ponctuel pour justifier l'optimisation). */}
               <img
                 src={coverImageUrl(event.id)}
@@ -121,7 +120,7 @@ export function EventHeader({
           <LocationMap
             lat={event.depot_lat}
             lon={event.depot_lon}
-            className="aspect-[4/3] w-32 rounded-lg border border-line sm:w-44"
+            className="aspect-[4/3] w-32 rounded-lg border border-line sm:w-44 lg:aspect-auto lg:h-52 lg:min-w-0 lg:flex-1"
           />
         </div>
       </div>

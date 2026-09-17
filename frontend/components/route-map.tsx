@@ -70,6 +70,7 @@ export function RouteMap({
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<(google.maps.Polyline | google.maps.Marker)[]>([]);
   const googleRef = useRef<typeof google | null>(null);
+  const [readyMap, setReadyMap] = useState<google.maps.Map | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const signature = JSON.stringify(
@@ -78,6 +79,7 @@ export function RouteMap({
 
   useEffect(() => {
     let cancelled = false;
+    let transitLayer: google.maps.TransitLayer | null = null;
 
     loadGoogleMaps()
       .then(async (g) => {
@@ -92,6 +94,9 @@ export function RouteMap({
           gestureHandling: "cooperative",
           styles: document.documentElement.classList.contains("dark") ? MAP_DARK_STYLE : MAP_LIGHT_STYLE,
         });
+        transitLayer = new g.maps.TransitLayer();
+        transitLayer.setMap(mapRef.current);
+        setReadyMap(mapRef.current);
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
@@ -99,6 +104,9 @@ export function RouteMap({
 
     return () => {
       cancelled = true;
+      transitLayer?.setMap(null);
+      mapRef.current = null;
+      googleRef.current = null;
     };
   }, []);
 
@@ -114,113 +122,108 @@ export function RouteMap({
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    const g = googleRef.current;
+    const map = readyMap;
+    if (!g || !map) return;
 
-    (async () => {
-      await loadGoogleMaps().catch(() => null);
-      const g = googleRef.current;
-      const map = mapRef.current;
-      if (cancelled || !g || !map) return;
+    overlaysRef.current.forEach((o) => o.setMap(null));
+    overlaysRef.current = [];
 
-      overlaysRef.current.forEach((o) => o.setMap(null));
-      overlaysRef.current = [];
+    const bounds = new g.maps.LatLngBounds();
 
-      const bounds = new g.maps.LatLngBounds();
+    routes.forEach((route, routeIndex) => {
+      const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+      const dimmed = highlightedRoute != null && highlightedRoute !== routeIndex;
+      const stopPath = route.stops.map((s) => ({ lat: s.lat, lng: s.lon }));
+      if (stopPath.length === 0) return;
 
-      routes.forEach((route, routeIndex) => {
-        const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
-        const dimmed = highlightedRoute != null && highlightedRoute !== routeIndex;
-        const stopPath = route.stops.map((s) => ({ lat: s.lat, lng: s.lon }));
-        if (stopPath.length === 0) return;
+      const hasGeometry = Array.isArray(route.geometry) && route.geometry.length > 1;
+      const path = hasGeometry
+        ? (route.geometry as number[][]).map((p) => ({ lat: p[0], lng: p[1] }))
+        : stopPath;
 
-        const hasGeometry = Array.isArray(route.geometry) && route.geometry.length > 1;
-        const path = hasGeometry
-          ? (route.geometry as number[][]).map((p) => ({ lat: p[0], lng: p[1] }))
-          : stopPath;
-
-        // Liseré sombre sous le trait : garde la ligne lisible quel que soit
-        // le fond, technique cartographique classique.
-        if (hasGeometry) {
-          overlaysRef.current.push(
-            new g.maps.Polyline({
-              path,
-              map,
-              strokeColor: "#0b0e12",
-              strokeOpacity: dimmed ? 0.12 : 0.35,
-              strokeWeight: 8,
-              zIndex: routeIndex * 10,
-            }),
-          );
-        }
-
+      // Liseré sombre sous le trait : garde la ligne lisible quel que soit
+      // le fond, technique cartographique classique.
+      if (hasGeometry) {
         overlaysRef.current.push(
           new g.maps.Polyline({
             path,
             map,
-            strokeColor: color,
-            strokeOpacity: hasGeometry ? (dimmed ? 0.25 : 1) : 0,
-            strokeWeight: 4,
-            zIndex: routeIndex * 10 + 1,
-            icons: hasGeometry
-              ? [
-                  {
-                    // Flèches de sens : on voit dans quel ordre la tournée se fait.
-                    icon: { path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 2.5, fillColor: color, fillOpacity: dimmed ? 0.25 : 1, strokeOpacity: 0 },
-                    offset: "0",
-                    repeat: "110px",
-                  },
-                ]
-              : [
-                  {
-                    icon: { path: "M 0,-1 0,1", strokeOpacity: dimmed ? 0.2 : 0.9, strokeColor: color, strokeWeight: 4, scale: 3 },
-                    offset: "0",
-                    repeat: "14px",
-                  },
-                ],
+            strokeColor: "#0b0e12",
+            strokeOpacity: dimmed ? 0.12 : 0.35,
+            strokeWeight: 8,
+            zIndex: routeIndex * 10,
           }),
         );
-
-        let passengerNumber = 0;
-        route.stops.forEach((stop) => {
-          bounds.extend({ lat: stop.lat, lng: stop.lon });
-          const isPassenger = stop.kind === "passenger";
-          if (isPassenger) passengerNumber += 1;
-
-          overlaysRef.current.push(
-            new g.maps.Marker({
-              position: { lat: stop.lat, lng: stop.lon },
-              map,
-              title:
-                stop.kind === "depot"
-                  ? "Point de rendez-vous"
-                  : `${stop.label} · ${route.driverName}`,
-              icon: stopMarkerIcon(g, stop, color, isPassenger ? passengerNumber : null),
-              label: isPassenger
-                ? {
-                    text: String(passengerNumber),
-                    color,
-                    fontSize: "10px",
-                    fontWeight: "600",
-                    fontFamily: "monospace",
-                  }
-                : undefined,
-              opacity: dimmed ? 0.35 : 1,
-              zIndex: routeIndex * 10 + (stop.kind === "depot" ? 5 : 2),
-            }),
-          );
-        });
-      });
-
-      if (!bounds.isEmpty()) {
-        map.fitBounds(bounds, 48);
       }
-    })();
 
+      overlaysRef.current.push(
+        new g.maps.Polyline({
+          path,
+          map,
+          strokeColor: color,
+          strokeOpacity: hasGeometry ? (dimmed ? 0.25 : 1) : 0,
+          strokeWeight: 4,
+          zIndex: routeIndex * 10 + 1,
+          icons: hasGeometry
+            ? [
+                {
+                  // Flèches de sens : on voit dans quel ordre la tournée se fait.
+                  icon: { path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 2.5, fillColor: color, fillOpacity: dimmed ? 0.25 : 1, strokeOpacity: 0 },
+                  offset: "0",
+                  repeat: "110px",
+                },
+              ]
+            : [
+                {
+                  icon: { path: "M 0,-1 0,1", strokeOpacity: dimmed ? 0.2 : 0.9, strokeColor: color, strokeWeight: 4, scale: 3 },
+                  offset: "0",
+                  repeat: "14px",
+                },
+              ],
+        }),
+      );
+
+      let passengerNumber = 0;
+      route.stops.forEach((stop) => {
+        bounds.extend({ lat: stop.lat, lng: stop.lon });
+        const isPassenger = stop.kind === "passenger";
+        if (isPassenger) passengerNumber += 1;
+
+        overlaysRef.current.push(
+          new g.maps.Marker({
+            position: { lat: stop.lat, lng: stop.lon },
+            map,
+            title:
+              stop.kind === "depot"
+                ? "Point de rendez-vous"
+                : `${stop.label} · ${route.driverName}`,
+            icon: stopMarkerIcon(g, stop, color, isPassenger ? passengerNumber : null),
+            label: isPassenger
+              ? {
+                  text: String(passengerNumber),
+                  color,
+                  fontSize: "10px",
+                  fontWeight: "600",
+                  fontFamily: "monospace",
+                }
+              : undefined,
+            opacity: dimmed ? 0.35 : 1,
+            zIndex: routeIndex * 10 + (stop.kind === "depot" ? 5 : 2),
+          }),
+        );
+      });
+    });
+
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds, 48);
+    }
     return () => {
-      cancelled = true;
+      overlaysRef.current.forEach((overlay) => overlay.setMap(null));
+      overlaysRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature, highlightedRoute]);
+  }, [signature, highlightedRoute, readyMap]);
 
   if (error) {
     return (

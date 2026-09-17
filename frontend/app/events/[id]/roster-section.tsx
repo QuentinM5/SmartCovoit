@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
-import { Car, Pencil, Upload, User, X } from "lucide-react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { Car, ChevronRight, Pencil, Upload, User, X } from "lucide-react";
 import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
 import { DeleteButton } from "@/components/delete-button";
 import { Button, ErrorNote, Field, inputClass } from "@/components/ui";
@@ -44,12 +44,27 @@ export function RosterSection({
   onImported: () => void;
 }) {
   const [importing, setImporting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
 
   return (
     <section>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="text-lg font-semibold tracking-tight">
-          {viewDirection === "dispersion" ? "Inscrits au retour" : "Inscrits à l'aller"}
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={contentId}
+            onClick={() => setExpanded((value) => !value)}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink"
+          >
+            <ChevronRight
+              className={`size-4 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
+            {viewDirection === "dispersion" ? "Inscrits au retour" : "Inscrits à l'aller"}
+          </button>
         </h2>
         <p className="tabular text-sm text-muted">
           {drivers.length} {drivers.length > 1 ? "conducteurs" : "conducteur"}
@@ -68,24 +83,16 @@ export function RosterSection({
         </p>
       </div>
 
+      <div id={contentId} hidden={!expanded}>
       {canImport && (
         <button
           type="button"
           onClick={() => setImporting(true)}
-          className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink"
+          className="mt-2 inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink"
         >
           <Upload className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           Importer depuis un fichier
         </button>
-      )}
-
-      {importing && (
-        <ImportDialog
-          eventId={eventId}
-          direction={viewDirection}
-          onClose={() => setImporting(false)}
-          onImported={onImported}
-        />
       )}
 
       {drivers.length === 0 && passengers.length === 0 ? (
@@ -119,11 +126,13 @@ export function RosterSection({
                       ) : (
                         <>
                           <Car className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
-                          <span className="font-medium">{d.name}</span>
-                          <span className="min-w-0 flex-1 truncate text-muted">{d.address}</span>
-                          <span className="tabular shrink-0 font-mono text-xs text-muted">
-                            {d.seats} {d.seats > 1 ? "places" : "place"}
-                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium [overflow-wrap:anywhere]">{d.name}</p>
+                            <p className="truncate text-muted" title={d.address}>{d.address}</p>
+                            <p className="tabular mt-1 font-mono text-xs text-muted">
+                              {d.seats} {d.seats > 1 ? "places" : "place"}
+                            </p>
+                          </div>
                         </>
                       )
                     }
@@ -159,8 +168,10 @@ export function RosterSection({
                       ) : (
                         <>
                           <User className="size-4 shrink-0 translate-y-0.5 text-muted" strokeWidth={1.75} />
-                          <span className="font-medium">{p.name}</span>
-                          <span className="min-w-0 flex-1 truncate text-muted">{p.address}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium [overflow-wrap:anywhere]">{p.name}</p>
+                            <p className="truncate text-muted" title={p.address}>{p.address}</p>
+                          </div>
                         </>
                       )
                     }
@@ -173,6 +184,15 @@ export function RosterSection({
         </>
       )}
       {error && <ErrorNote>{error}</ErrorNote>}
+      </div>
+      {importing && (
+        <ImportDialog
+          eventId={eventId}
+          direction={viewDirection}
+          onClose={() => setImporting(false)}
+          onImported={onImported}
+        />
+      )}
     </section>
   );
 }
@@ -196,23 +216,25 @@ function RosterRow({
   const [editing, setEditing] = useState(false);
 
   if (editing) {
-    return <li className="rounded-md border border-line px-3 py-2.5 text-sm">{render(true, setEditing)}</li>;
+    return <li className="min-w-0 rounded-md border border-line px-3 py-2.5 text-sm">{render(true, setEditing)}</li>;
   }
 
   return (
-    <li className="flex items-baseline gap-3 rounded-md border border-line px-3 py-2.5 text-sm">
+    <li className="flex min-w-0 items-start gap-2 rounded-md border border-line px-3 py-2.5 text-sm">
       {render(false, setEditing)}
-      {editable && (
-        <button
-          type="button"
-          aria-label={`Modifier ${name}`}
-          onClick={() => setEditing(true)}
-          className="shrink-0 rounded p-1 text-muted transition hover:text-ink"
-        >
-          <Pencil className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-        </button>
-      )}
-      <DeleteButton label={name} onConfirm={onRemove} />
+      <div className="flex shrink-0 items-center gap-1">
+        {editable && (
+          <button
+            type="button"
+            aria-label={`Modifier ${name}`}
+            onClick={() => setEditing(true)}
+            className="shrink-0 rounded p-1 text-muted transition hover:text-ink"
+          >
+            <Pencil className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        )}
+        <DeleteButton label={name} onConfirm={onRemove} />
+      </div>
     </li>
   );
 }
@@ -269,7 +291,7 @@ function EditForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
-        <div className="grid flex-1 gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 flex-1 gap-3">
           <Field label="Nom">
             <input
               required

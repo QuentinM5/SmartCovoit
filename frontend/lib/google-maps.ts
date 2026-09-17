@@ -14,7 +14,8 @@ export const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?
 export const MAP_LIGHT_STYLE: google.maps.MapTypeStyle[] = [
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
   { featureType: "poi", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "on" }] },
+  { featureType: "transit.station", elementType: "labels.icon", stylers: [{ visibility: "on" }] },
   { featureType: "road", elementType: "labels", stylers: [{ visibility: "simplified" }] },
 ];
 
@@ -27,6 +28,8 @@ export const MAP_DARK_STYLE: google.maps.MapTypeStyle[] = [
   { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a434f" }] },
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1116" }] },
   { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: "#171c23" }] },
+  // Les lignes colorées viennent de TransitLayer ; les stations restent lisibles.
+  { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d4dce6" }] },
 ];
 
 let loader: Promise<typeof google> | null = null;

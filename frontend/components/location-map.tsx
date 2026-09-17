@@ -17,6 +17,8 @@ export function LocationMap({ lat, lon, className }: { lat: number; lon: number;
 
   useEffect(() => {
     let cancelled = false;
+    let transitLayer: google.maps.TransitLayer | null = null;
+    let marker: google.maps.Marker | null = null;
 
     loadGoogleMaps()
       .then(async (g) => {
@@ -32,7 +34,9 @@ export function LocationMap({ lat, lon, className }: { lat: number; lon: number;
           styles: document.documentElement.classList.contains("dark") ? MAP_DARK_STYLE : MAP_LIGHT_STYLE,
         });
         mapRef.current = map;
-        new g.maps.Marker({
+        transitLayer = new g.maps.TransitLayer();
+        transitLayer.setMap(map);
+        marker = new g.maps.Marker({
           position: { lat, lng: lon },
           map,
           // Même pastille pleine que le point "dépôt" dans RouteMap —
@@ -53,6 +57,9 @@ export function LocationMap({ lat, lon, className }: { lat: number; lon: number;
 
     return () => {
       cancelled = true;
+      transitLayer?.setMap(null);
+      marker?.setMap(null);
+      mapRef.current = null;
     };
   }, [lat, lon]);
 

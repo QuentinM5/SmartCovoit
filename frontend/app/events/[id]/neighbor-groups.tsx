@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Car, User } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Car, ChevronRight, User } from "lucide-react";
 import { Button, ErrorNote } from "@/components/ui";
 import { networkMessage } from "@/lib/event-format";
 import { groupNearbyParticipants, type NearbyMember } from "@/lib/nearby";
@@ -49,6 +49,8 @@ export function NeighborGroups({
    * son groupe, vidé au changement de sens affiché par l'appelant. */
   highlightIds: string[];
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
   const members: NearbyMember[] = useMemo(
     () => [
       ...drivers.map((d): NearbyMember => ({ id: d.id, name: d.name, role: "driver", lat: d.lat, lon: d.lon })),
@@ -68,35 +70,50 @@ export function NeighborGroups({
 
   return (
     <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Qui est tout près</h2>
+      <h2 className="text-lg font-semibold tracking-tight">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpanded((value) => !value)}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink"
+        >
+          <ChevronRight
+            className={`size-4 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+            strokeWidth={1.75}
+            aria-hidden="true"
+          />
+          Qui est tout près
+        </button>
+      </h2>
+      <div id={contentId} hidden={!expanded}>
         <p className="mt-0.5 text-sm text-muted">
           À moins de 2 km les uns des autres — de bons candidats pour un même véhicule ou un point de rendez-vous
           commun.
         </p>
-      </div>
-      <div className="flex flex-col gap-2">
-        {groups.map((group) => {
-          // Ids triés joints : ne se réinitialise que si la composition du
-          // groupe change, jamais à un simple re-tri ou re-rendu — porte
-          // l'état "résultat mémorisé par groupe" via `key`, pas un effet.
-          const groupKey = group
-            .map((m) => m.id)
-            .slice()
-            .sort()
-            .join(",");
-          const highlighted = group.some((m) => highlightIds.includes(m.id));
-          return (
-            <NeighborGroupCard
-              key={groupKey}
-              eventId={eventId}
-              group={group}
-              highlighted={highlighted}
-              highlightIds={highlightIds}
-              canRequestMeetupPoint={canRequestMeetupPoint}
-            />
-          );
-        })}
+        <div className="mt-3 flex flex-col gap-2">
+          {groups.map((group) => {
+            // Ids triés joints : ne se réinitialise que si la composition du
+            // groupe change, jamais à un simple re-tri ou re-rendu — porte
+            // l'état "résultat mémorisé par groupe" via `key`, pas un effet.
+            const groupKey = group
+              .map((m) => m.id)
+              .slice()
+              .sort()
+              .join(",");
+            const highlighted = group.some((m) => highlightIds.includes(m.id));
+            return (
+              <NeighborGroupCard
+                key={groupKey}
+                eventId={eventId}
+                group={group}
+                highlighted={highlighted}
+                highlightIds={highlightIds}
+                canRequestMeetupPoint={canRequestMeetupPoint}
+              />
+            );
+          })}
+        </div>
       </div>
     </section>
   );
