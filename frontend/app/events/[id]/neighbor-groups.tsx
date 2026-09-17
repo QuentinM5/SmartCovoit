@@ -69,7 +69,7 @@ export function NeighborGroups({
   return (
     <section className="flex flex-col gap-3">
       <div>
-        <h2 className="text-sm font-semibold tracking-tight">Qui est tout près</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Qui est tout près</h2>
         <p className="mt-0.5 text-sm text-muted">
           À moins de 2 km les uns des autres — de bons candidats pour un même véhicule ou un point de rendez-vous
           commun.

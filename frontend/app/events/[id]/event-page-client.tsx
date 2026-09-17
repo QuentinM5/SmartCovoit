@@ -24,7 +24,7 @@ import {
   type Solution,
 } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
-import { DirectionTabs } from "@/components/direction";
+import { DirectionHint, DirectionTabs } from "@/components/direction";
 import { Button, ButtonLink, ErrorNote, Header, Skeleton } from "@/components/ui";
 import { consumeNewEventSeed } from "@/lib/new-event-seed";
 import { networkMessage, moveStopOptimistic } from "@/lib/event-format";
@@ -32,6 +32,7 @@ import { resolveStops } from "@/lib/route";
 import { usePassengerDrag, type DragInfo } from "@/lib/use-passenger-drag";
 import { SolvingProgress } from "@/components/solving-progress";
 import { EventHeader } from "./event-header";
+import { EventStats } from "./event-stats";
 import { NeighborGroups } from "./neighbor-groups";
 import { RosterSection, type ParticipantUpdate } from "./roster-section";
 import { RoutesSection } from "./routes-section";
@@ -498,95 +499,120 @@ export function EventPageClient({ id }: { id: string }) {
     <>
       <Header back />
 
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-8 sm:py-12">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
-          <EventHeader
-            event={event}
-            canManage={canManage}
-            uploadingCoverImage={uploadingCoverImage}
-            deletingCoverImage={deletingCoverImage}
-            coverImageError={coverImageError}
-            onUploadCoverImage={handleUploadCoverImage}
-            onDeleteCoverImage={handleDeleteCoverImage}
-          />
+      <main className="mx-auto w-full max-w-6xl px-5 py-8 sm:py-12">
+        <EventHeader
+          event={event}
+          canManage={canManage}
+          uploadingCoverImage={uploadingCoverImage}
+          deletingCoverImage={deletingCoverImage}
+          coverImageError={coverImageError}
+          onUploadCoverImage={handleUploadCoverImage}
+          onDeleteCoverImage={handleDeleteCoverImage}
+        />
 
-          <DirectionTabs value={viewDirection} onChange={handleViewDirectionChange} depotAddress={event.depot_address} />
+        {/* Barre de sens collante : sur un événement à 40 inscrits suivis de
+            leurs tournées, savoir quel trajet on regarde ne doit pas obliger
+            à remonter en haut de page. Débordement négatif + fond translucide
+            pour qu'elle couvre toute la largeur en restant lisible sur ce qui
+            défile dessous. */}
+        <div className="sticky top-0 z-20 -mx-5 mt-10 border-y border-line bg-paper/85 px-5 py-3 backdrop-blur">
+          <DirectionTabs value={viewDirection} onChange={handleViewDirectionChange} />
+        </div>
 
-          <div ref={signupSectionRef}>
-            {authLoading ? null : user ? (
-              <SignupSection direction={viewDirection} defaultName={user.name} onAdd={handleAddParticipant} />
-            ) : (
-              <LoginPrompt message="Connecte-toi pour t'inscrire à cet événement." />
-            )}
-          </div>
+        <p className="mt-5 text-sm text-muted">
+          <DirectionHint value={viewDirection} depotAddress={event.depot_address} />
+        </p>
 
-          <NeighborGroups
-            eventId={id}
-            drivers={viewDrivers}
-            passengers={viewPassengers}
-            canRequestMeetupPoint={!!user}
-            highlightIds={lastSignupIds}
+        <div className="mt-4">
+          <EventStats
+            direction={viewDirection}
+            driverCount={viewDrivers.length}
+            passengerCount={viewPassengers.length}
+            seatsLeft={seatsLeft}
+            solution={solution}
           />
         </div>
 
-        <RosterSection
-          eventId={id}
-          viewDirection={viewDirection}
-          canImport={canManage}
-          drivers={viewDrivers}
-          passengers={viewPassengers}
-          seatsLeft={seatsLeft}
-          error={rosterError}
-          onRemove={handleRemove}
-          onUpdate={handleUpdateParticipant}
-          onImported={refresh}
-        />
+        {/* Deux colonnes à partir de `lg` : la page était une seule colonne
+            étroite qui laissait la moitié de l'écran vide sur desktop, alors
+            que les deux gestes répétés (s'inscrire, recalculer) demandaient
+            de défiler jusqu'à eux. Ils vivent maintenant dans un rail collant
+            à droite, le contenu qui s'allonge à gauche. */}
+        <div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="flex min-w-0 flex-col gap-10">
+            <NeighborGroups
+              eventId={id}
+              drivers={viewDrivers}
+              passengers={viewPassengers}
+              canRequestMeetupPoint={!!user}
+              highlightIds={lastSignupIds}
+            />
 
-        <section className="flex flex-col gap-4">
-          {authLoading ? null : !user ? (
-            <LoginPrompt message="Connecte-toi pour calculer les trajets de cet événement." />
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <Button onClick={handleSolve} disabled={solving || viewDrivers.length === 0}>
-                  <RouteIcon className="size-4" strokeWidth={1.75} aria-hidden="true" />
-                  {solving ? "Calcul…" : solution ? "Recalculer les trajets" : "Calculer les trajets"}
-                </Button>
-                {viewDrivers.length === 0 && (
-                  <p className="text-sm text-muted">Il faut au moins un conducteur inscrit sur ce trajet.</p>
-                )}
-              </div>
+            <RosterSection
+              eventId={id}
+              viewDirection={viewDirection}
+              canImport={canManage}
+              drivers={viewDrivers}
+              passengers={viewPassengers}
+              seatsLeft={seatsLeft}
+              error={rosterError}
+              onRemove={handleRemove}
+              onUpdate={handleUpdateParticipant}
+              onImported={refresh}
+            />
 
-              {solving && (
-                <div ref={progressRef}>
-                  <SolvingProgress driverCount={viewDrivers.length} passengerCount={viewPassengers.length} />
+            {solution && event && (
+              <RoutesSection
+                solution={solution}
+                event={event}
+                mapRoutes={mapRoutes}
+                highlighted={highlighted}
+                onHoverChange={setHighlighted}
+                canManage={canManage}
+                onPassengerDragStart={startDrag}
+                hasManualChanges={hasManualChanges}
+                hoveredDriverId={hoveredDriverId}
+                draggingPassengerId={drag?.passengerId ?? null}
+                pendingOvercapacityDriverId={pendingOvercapacity?.toDriverId ?? null}
+                onConfirmOvercapacity={() => {
+                  if (pendingOvercapacity) void performMoveStop(pendingOvercapacity.info, pendingOvercapacity.toDriverId);
+                }}
+                onCancelOvercapacity={() => setPendingOvercapacity(null)}
+              />
+            )}
+          </div>
+
+          {/* `order-first` sur mobile : en une seule colonne, le rail passerait
+              sous la liste des inscrits et les tournées, alors que s'inscrire
+              est justement ce qu'on vient faire en arrivant par le lien
+              partagé. À partir de `lg`, l'ordre du DOM reprend et le place à
+              droite. */}
+          <aside ref={signupSectionRef} className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-24">
+            {authLoading ? null : user ? (
+              <>
+                <SignupSection direction={viewDirection} defaultName={user.name} onAdd={handleAddParticipant} />
+
+                <div data-surface className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 sm:p-5">
+                  <Button onClick={handleSolve} disabled={solving || viewDrivers.length === 0} className="w-full">
+                    <RouteIcon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+                    {solving ? "Calcul…" : solution ? "Recalculer les trajets" : "Calculer les trajets"}
+                  </Button>
+                  {viewDrivers.length === 0 && (
+                    <p className="text-sm text-muted">Il faut au moins un conducteur inscrit sur ce trajet.</p>
+                  )}
+                  {solving && (
+                    <div ref={progressRef}>
+                      <SolvingProgress driverCount={viewDrivers.length} passengerCount={viewPassengers.length} />
+                    </div>
+                  )}
+                  {solveError && <ErrorNote>{solveError}</ErrorNote>}
                 </div>
-              )}
-
-              {solveError && <ErrorNote>{solveError}</ErrorNote>}
-            </>
-          )}
-        </section>
-
-        {solution && event && (
-          <RoutesSection
-            solution={solution}
-            event={event}
-            mapRoutes={mapRoutes}
-            highlighted={highlighted}
-            onHoverChange={setHighlighted}
-            canManage={canManage}
-            onPassengerDragStart={startDrag}
-            hasManualChanges={hasManualChanges}
-            hoveredDriverId={hoveredDriverId}
-            draggingPassengerId={drag?.passengerId ?? null}
-            pendingOvercapacityDriverId={pendingOvercapacity?.toDriverId ?? null}
-            onConfirmOvercapacity={() => {
-              if (pendingOvercapacity) void performMoveStop(pendingOvercapacity.info, pendingOvercapacity.toDriverId);
-            }}
-            onCancelOvercapacity={() => setPendingOvercapacity(null)}
-          />
-        )}
+              </>
+            ) : (
+              <LoginPrompt message="Connecte-toi pour t'inscrire et calculer les trajets." />
+            )}
+          </aside>
+        </div>
       </main>
 
       {/* Barre fixe mobile seulement (`sm:hidden`) : sur desktop, les deux

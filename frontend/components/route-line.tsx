@@ -98,11 +98,20 @@ export function RouteLine({
       onMouseLeave={() => onHoverChange?.(false)}
       onFocus={() => onHoverChange?.(true)}
       onBlur={() => onHoverChange?.(false)}
-      className={`animate-rise rounded-lg border p-4 transition ${
+      className={`animate-rise relative overflow-hidden rounded-lg border p-4 pl-5 transition ${
         isDropTarget ? "border-inbound bg-inbound/5" : "border-line bg-surface hover:border-muted"
       }`}
       style={{ animationDelay: `${index * 70}ms` }}
     >
+      {/* Liseré à la couleur de la tournée : relie la carte à son tracé sur
+          la carte géographique sans dépendre de la seule pastille du titre,
+          trop petite pour se repérer d'un coup d'œil dans une grille. */}
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ backgroundColor: color }}
+      />
+
       <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h3 className="flex items-center gap-2 font-medium">
           <span

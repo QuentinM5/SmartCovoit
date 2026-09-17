@@ -93,15 +93,23 @@ const OPTIONS: { value: Direction; title: string }[] = [
   { value: "dispersion", title: "Retour" },
 ];
 
-export function DirectionTabs({
-  value,
-  onChange,
-  depotAddress,
-}: {
-  value: Direction;
-  onChange: (next: Direction) => void;
-  depotAddress: string;
-}) {
+/** La phrase qui explique le sens affiché, séparée de la barre elle-même :
+ * la barre est collante en haut de la page événement (cf.
+ * event-page-client.tsx) et doit y rester basse, alors que l'explication a
+ * sa place dans la bande de chiffres, qui dépend du même onglet. */
+export function DirectionHint({ value, depotAddress }: { value: Direction; depotAddress: string }) {
+  return value === "dispersion" ? (
+    <>
+      Tout le monde part de <span className="text-ink">{depotAddress}</span> et rentre chez soi.
+    </>
+  ) : (
+    <>
+      Chacun part de chez soi et rejoint <span className="text-ink">{depotAddress}</span>.
+    </>
+  );
+}
+
+export function DirectionTabs({ value, onChange }: { value: Direction; onChange: (next: Direction) => void }) {
   return (
     <div>
       <fieldset>
@@ -136,17 +144,6 @@ export function DirectionTabs({
           })}
         </div>
       </fieldset>
-      <p className="mt-2 text-sm text-muted">
-        {value === "dispersion" ? (
-          <>
-            Tout le monde part de <span className="text-ink">{depotAddress}</span> et rentre chez soi.
-          </>
-        ) : (
-          <>
-            Chacun part de chez soi et rejoint <span className="text-ink">{depotAddress}</span>.
-          </>
-        )}
-      </p>
     </div>
   );
 }

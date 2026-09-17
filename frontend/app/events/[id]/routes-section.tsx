@@ -48,7 +48,7 @@ export function RoutesSection({
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-sm font-semibold tracking-tight">Trajets</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Trajets</h2>
         <p className="tabular text-sm text-muted">
           {solution.total_duration_s != null ? (
             <>

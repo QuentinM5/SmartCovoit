@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { DownloadIcsButton } from "@/components/download-ics-button";
@@ -43,12 +43,24 @@ export function EventHeader({
           visuels à droite — sans dupliquer le balisage pour chaque taille. */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
-          <p className="mt-1 text-sm text-muted capitalize">{formatEventDate(event.event_date)}</p>
-          <p className="mt-0.5 text-sm text-muted">
-            Rendez-vous : <span className="text-ink">{event.depot_address}</span>
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <h1 className="text-3xl leading-[1.1] font-semibold tracking-tight sm:text-4xl lg:text-5xl">
+            {event.name}
+          </h1>
+          {/* Date et lieu en ligne, pas empilés en deux phrases : lus d'un
+              seul coup d'œil, comme l'en-tête d'un billet. */}
+          <dl className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="size-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden="true" />
+              <dt className="sr-only">Date</dt>
+              <dd className="capitalize">{formatEventDate(event.event_date)}</dd>
+            </div>
+            <div className="flex min-w-0 items-center gap-2">
+              <MapPin className="size-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden="true" />
+              <dt className="sr-only">Point de rendez-vous</dt>
+              <dd className="truncate">{event.depot_address}</dd>
+            </div>
+          </dl>
+          <div className="mt-4 flex flex-wrap gap-2">
             <DownloadIcsButton event={event} />
             <CopyLinkButton />
             <QrCodeButton />
