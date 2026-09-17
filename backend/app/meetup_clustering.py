@@ -49,6 +49,38 @@ def cluster_nearby_stops(
     return [g for g in groups if len(g) >= 2]
 
 
+def is_nearby_group(stops: list[tuple[T, Coord]], radius_m: float = DEFAULT_CLUSTER_RADIUS_M) -> bool:
+    """Vrai si `stops` contient au moins deux arrêts et que son diamètre
+    (distance maximale entre deux arrêts quelconques, peu importe lesquels)
+    ne dépasse pas `2 * radius_m`.
+
+    Contrairement à `cluster_nearby_stops` ci-dessus, ce critère est
+    indépendant de l'ordre des arrêts : le glouton graine+rayon dépend de
+    quel arrêt sert de graine, mais l'inégalité triangulaire garantit que
+    tout groupe qu'il produit a un diamètre <= 2 * radius_m (chaque membre
+    est à <= radius_m de la graine, donc deux membres sont à <= 2 * radius_m
+    l'un de l'autre). Cette borne ne peut donc jamais refuser un groupe
+    légitime, quelle que soit l'implémentation du regroupement côté client,
+    présente ou future — elle borne malgré tout la requête payante à une
+    zone d'environ 4 km de large faite d'adresses réelles de cet événement.
+
+    Le critère "tous à <= radius_m du centroïde" a été écarté : plus strict
+    que le regroupement client, il produirait de vrais faux refus sur un
+    groupe déséquilibré (une graine isolée + une grappe : le centroïde
+    dérive vers la grappe, éloignant la graine au-delà de radius_m).
+
+    Coût : O(n²) haversines au pire (780 pour 40 inscrits) — négligeable
+    face au coût d'un appel Places.
+    """
+    if len(stops) < 2:
+        return False
+    coords = [c for _, c in stops]
+    diameter = max(
+        haversine_m(coords[i], coords[j]) for i in range(len(coords)) for j in range(i + 1, len(coords))
+    )
+    return diameter <= 2 * radius_m
+
+
 def centroid(coords: list[Coord]) -> Coord:
     """Moyenne simple des latitudes/longitudes — suffisant pour centrer une
     recherche Google Places sur un petit groupe de points proches ; pas

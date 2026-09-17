@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Papa from "papaparse";
 import { Upload, X } from "lucide-react";
-import { Button, ErrorNote, Field, inputClass } from "@/components/ui";
+import { Button, ErrorNote, inputClass } from "@/components/ui";
 import { detectColumn, inferRole, parseSeats, type ColumnField } from "@/lib/csv-import";
 import { importParticipants, type Direction, type ImportResult, type ImportRow } from "@/lib/api";
 import { networkMessage } from "@/lib/event-format";
@@ -32,19 +32,23 @@ interface ParsedCsv {
  */
 export function ImportDialog({
   eventId,
-  defaultDirection,
+  direction,
   onClose,
   onImported,
 }: {
   eventId: string;
-  defaultDirection: Direction;
+  direction: Direction;
   onClose: () => void;
   onImported: () => void;
 }) {
   const [step, setStep] = useState<Step>("pick-file");
   const [parsed, setParsed] = useState<ParsedCsv | null>(null);
   const [mapping, setMapping] = useState<Record<string, ColumnField>>({});
-  const [directions, setDirections] = useState<Direction[]>([defaultDirection]);
+  // Même patron que SignupSection : le sens de base vient du trajet affiché,
+  // cette case n'ajoute que l'autre — pas de sélecteur de sens indépendant.
+  const [alsoOtherDirection, setAlsoOtherDirection] = useState(false);
+  const otherDirection: Direction = direction === "ramassage" ? "dispersion" : "ramassage";
+  const directions: Direction[] = alsoOtherDirection ? [direction, otherDirection] : [direction];
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
 
@@ -207,33 +211,23 @@ export function ImportDialog({
               </p>
             )}
 
-            <Field label="Sens du trajet pour tout le lot">
-              <div className="flex gap-3">
-                {(["ramassage", "dispersion"] as Direction[]).map((d) => (
-                  <label key={d} className="flex items-center gap-1.5 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={directions.includes(d)}
-                      onChange={(e) =>
-                        setDirections((current) =>
-                          e.target.checked ? [...current, d] : current.filter((x) => x !== d),
-                        )
-                      }
-                    />
-                    {d === "ramassage" ? "Aller" : "Retour"}
-                  </label>
-                ))}
-              </div>
-            </Field>
+            <div>
+              <p className="text-xs text-muted">Le lot sera importé sur le trajet affiché.</p>
+              <label className="mt-1.5 flex w-fit cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={alsoOtherDirection}
+                  onChange={(e) => setAlsoOtherDirection(e.target.checked)}
+                  className="size-4 accent-ink"
+                />
+                {direction === "dispersion" ? "Importer aussi ce lot sur l'aller" : "Importer aussi ce lot sur le retour"}
+              </label>
+            </div>
 
             {error && <ErrorNote>{error}</ErrorNote>}
 
             <div className="flex gap-2">
-              <Button
-                type="button"
-                onClick={handleImport}
-                disabled={!hasNameAndAddress || directions.length === 0}
-              >
+              <Button type="button" onClick={handleImport} disabled={!hasNameAndAddress}>
                 Importer {parsed.rows.length} ligne{parsed.rows.length > 1 ? "s" : ""}
               </Button>
               <Button type="button" variant="quiet" onClick={() => setStep("pick-file")}>

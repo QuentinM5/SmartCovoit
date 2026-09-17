@@ -88,107 +88,65 @@ export function DirectionGlyph({
   );
 }
 
-const OPTIONS: { value: Direction; title: string; help: string }[] = [
-  {
-    value: "ramassage",
-    title: "Aller",
-    help: "Chacun part de chez soi et rejoint le point de rendez-vous.",
-  },
-  {
-    value: "dispersion",
-    title: "Retour",
-    help: "Tout le monde part du point de rendez-vous et rentre chez soi.",
-  },
+const OPTIONS: { value: Direction; title: string }[] = [
+  { value: "ramassage", title: "Aller" },
+  { value: "dispersion", title: "Retour" },
 ];
 
-/**
- * À l'inscription, une personne peut participer à l'aller, au retour, ou
- * aux deux (même adresse dans les deux cas — seul son rôle diffère, cf.
- * `addressCopy` dans event-page-client.tsx) : sélection multiple, pas
- * exclusive comme `DirectionPicker` ci-dessous.
- */
-export function DirectionCheckboxes({
+export function DirectionTabs({
   value,
   onChange,
-}: {
-  value: Direction[];
-  onChange: (next: Direction[]) => void;
-}) {
-  function toggle(direction: Direction) {
-    onChange(value.includes(direction) ? value.filter((d) => d !== direction) : [...value, direction]);
-  }
-
-  return (
-    <fieldset>
-      <legend className="mb-2 text-sm font-medium">Trajet(s)</legend>
-      <div className="grid grid-cols-2 gap-2">
-        {OPTIONS.map((option) => {
-          const checked = value.includes(option.value);
-          return (
-            <label
-              key={option.value}
-              className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-inbound ${
-                checked ? "border-ink bg-ink text-paper" : "border-line text-muted hover:border-muted"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => toggle(option.value)}
-                className="sr-only"
-              />
-              {option.title}
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
-export function DirectionPicker({
-  value,
-  onChange,
+  depotAddress,
 }: {
   value: Direction;
   onChange: (next: Direction) => void;
+  depotAddress: string;
 }) {
   return (
-    <fieldset className="grid grid-cols-2 gap-3">
-      <legend className="mb-2 text-sm font-medium">Sens du trajet</legend>
+    <div>
+      <fieldset>
+        <legend className="sr-only">Trajet affiché</legend>
+        <div className="grid grid-cols-2 gap-1 rounded-lg border border-line bg-paper p-1">
+          {OPTIONS.map((option) => {
+            const selected = value === option.value;
+            const accent = option.value === "dispersion" ? "text-outbound" : "text-inbound";
 
-      {OPTIONS.map((option) => {
-        const selected = value === option.value;
-        const accent = option.value === "dispersion" ? "text-outbound" : "text-inbound";
-
-        return (
-          <label
-            key={option.value}
-            data-surface
-            // Le radio est en sr-only : sans `has-[:focus-visible]`, un
-            // utilisateur au clavier ne verrait pas quelle option a le focus.
-            className={`group relative cursor-pointer rounded-lg border p-3 transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-inbound ${
-              selected
-                ? "border-current bg-surface " + accent
-                : "border-line bg-surface text-muted hover:border-muted"
-            }`}
-          >
-            <input
-              type="radio"
-              name="direction"
-              value={option.value}
-              checked={selected}
-              onChange={() => onChange(option.value)}
-              className="sr-only"
-            />
-            <DirectionGlyph direction={option.value} animated={selected} className="h-14 w-full" />
-            <span className={`mt-2 block text-sm font-medium ${selected ? "" : "text-ink"}`}>
-              {option.title}
-            </span>
-            <span className="mt-0.5 block text-xs leading-snug text-muted">{option.help}</span>
-          </label>
-        );
-      })}
-    </fieldset>
+            return (
+              <label
+                key={option.value}
+                data-surface={selected || undefined}
+                // Le radio est en sr-only : sans `has-[:focus-visible]`, un
+                // utilisateur au clavier ne verrait pas quelle option a le focus.
+                className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-inbound ${
+                  selected ? "border-line bg-surface " + accent : "border-transparent text-muted hover:text-ink"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="sens-affiche"
+                  value={option.value}
+                  checked={selected}
+                  onChange={() => onChange(option.value)}
+                  className="sr-only"
+                />
+                <DirectionGlyph direction={option.value} animated={selected} className="h-7 w-10 shrink-0" />
+                {option.title}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      <p className="mt-2 text-sm text-muted">
+        {value === "dispersion" ? (
+          <>
+            Tout le monde part de <span className="text-ink">{depotAddress}</span> et rentre chez soi.
+          </>
+        ) : (
+          <>
+            Chacun part de chez soi et rejoint <span className="text-ink">{depotAddress}</span>.
+          </>
+        )}
+      </p>
+    </div>
   );
 }

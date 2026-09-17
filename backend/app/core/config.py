@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     # 2-3 fois) tout en bornant le coût maximal par compte et par jour.
     max_solves_per_user_per_day: int = 5
 
+    # Budget quotidien par compte sur POST /events/{id}/meetup-point : chaque
+    # point de rendez-vous proposé est une requête Nearby Search facturée. Le
+    # clic est déjà explicite et unique par groupe (cf. app.meetup_clustering
+    # et le verrou "résultat mémorisé" côté frontend), ce plafond borne
+    # malgré tout le pire cas par compte et par jour (cf. audit facturation).
+    max_meetup_points_per_user_per_day: int = 10
+
     # Bourrage d'identifiants sur /auth/login : au-delà de ce nombre
     # d'échecs pour le même email dans la fenêtre ci-dessous, les tentatives
     # suivantes sont bloquées sans même vérifier le mot de passe. Généreux

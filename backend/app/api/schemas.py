@@ -335,3 +335,25 @@ class MeetupSuggestion(BaseModel):
     address: str
     lat: float
     lon: float
+
+
+class MeetupPoint(BaseModel):
+    name: str
+    address: str
+    lat: float
+    lon: float
+
+
+class MeetupPointIn(BaseModel):
+    # `max_length=40` : borne alignée sur le défaut de
+    # `Settings.max_participants_per_event` — plafond par sens de trajet, un
+    # groupe peut légitimement réunir tous les inscrits d'un sens en zone
+    # dense. À remonter en même temps que ce réglage s'il est augmenté en
+    # production. `min_length=2` : une personne seule n'a rien à regrouper.
+    participant_ids: list[uuid.UUID] = Field(min_length=2, max_length=40)
+
+
+class MeetupPointOut(BaseModel):
+    # `point` nul = rien à proposer (clé Places absente, aucun lieu autour,
+    # Places en échec) — jamais une erreur pour l'appelant.
+    point: MeetupPoint | None

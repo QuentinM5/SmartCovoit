@@ -48,7 +48,9 @@ export function RosterSection({
   return (
     <section>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-sm font-semibold tracking-tight">Inscrits</h2>
+        <h2 className="text-sm font-semibold tracking-tight">
+          {viewDirection === "dispersion" ? "Inscrits au retour" : "Inscrits à l'aller"}
+        </h2>
         <p className="tabular text-sm text-muted">
           {drivers.length} {drivers.length > 1 ? "conducteurs" : "conducteur"}
           <span aria-hidden="true"> · </span>
@@ -80,7 +82,7 @@ export function RosterSection({
       {importing && (
         <ImportDialog
           eventId={eventId}
-          defaultDirection={viewDirection}
+          direction={viewDirection}
           onClose={() => setImporting(false)}
           onImported={onImported}
         />

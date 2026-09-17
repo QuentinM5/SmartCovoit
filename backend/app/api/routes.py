@@ -50,7 +50,7 @@ from app.distance.types import Coord, MatrixProviderWithGeometry, Polyline
 from app.geocoding.nominatim import NominatimClient
 from app.geocoding.types import GeocodingError
 from app.impact import co2_saved_kg
-from app.meetup_clustering import centroid, cluster_nearby_stops
+from app.meetup_clustering import centroid, cluster_nearby_stops, is_nearby_group
 from app.solver.errors import SolverError
 from app.solver.model import Direction, DriverSpec, PassengerSpec, Route as SolverRoute, SolveRequest
 from app.solver.vrp import solve
@@ -1190,6 +1190,114 @@ async def get_latest_solution(
         fallback_reason=record.fallback_reason,
         routes=routes_out,
         created_at=record.created_at,
+    )
+
+
+@router.post("/events/{event_id}/meetup-point", response_model=schemas.MeetupPointOut)
+async def suggest_meetup_point(
+    event_id: uuid.UUID,
+    body: schemas.MeetupPointIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> schemas.MeetupPointOut:
+    """Propose un vrai lieu de rendez-vous (Google Places) pour un groupe de
+    conducteurs/passagers choisi explicitement par le client, indépendamment
+    de tout calcul de tournée — cf. `NeighborGroups` côté frontend, qui
+    regroupe localement et gratuitement (haversine) avant de proposer ce
+    bouton. Remplace `get_meetup_suggestions` comme point d'entrée visible :
+    celui-ci n'existe qu'après un `/solve`, ce qui enterrait la
+    fonctionnalité derrière un calcul que personne n'a forcément lancé.
+
+    N'importe quel compte connecté (approuvé si l'événement l'exige) peut
+    appeler cet endpoint, comme `/solve` : ce n'est pas une modification
+    destructive, et le budget quotidien ci-dessous plus la vérification de
+    proximité protègent déjà de l'abus — pas besoin de réserver ça à
+    l'organisateur.
+
+    ⚠️ `worker/src/failover-policy.ts` rejoue les écritures sur échec de
+    transport : un clic malchanceux pourrait déclencher 2 appels Places si
+    les deux instances avaient la clé configurée. En pratique seule
+    l'instance principale l'a (cf. docs/deploiement.md) ; le budget
+    quotidien ci-dessous borne de toute façon le pire cas.
+    """
+    event = await _load_event_with_participants(db, event_id)
+    await _check_can_view_event(db, event, current_user)
+
+    # Clé absente -> rien à proposer, avant toute comptabilité : coût nul,
+    # budget non entamé (cf. Settings.google_places_api_key).
+    if not settings.google_places_api_key:
+        return schemas.MeetupPointOut(point=None)
+
+    # Coordonnées rechargées depuis la base, jamais depuis le corps de la
+    # requête : un client ne doit pas pouvoir faire payer un appel Places
+    # sur des coordonnées arbitraires en se faisant passer pour un groupe.
+    participants_by_id: dict[uuid.UUID, Driver | Passenger] = {d.id: d for d in event.drivers} | {
+        p.id: p for p in event.passengers
+    }
+    participants: list[Driver | Passenger] = []
+    for participant_id in body.participant_ids:
+        participant = participants_by_id.get(participant_id)
+        if participant is None:
+            raise HTTPException(status_code=404, detail="Participant introuvable pour cet événement.")
+        participants.append(participant)
+
+    if len({p.direction for p in participants}) > 1:
+        raise HTTPException(
+            status_code=422, detail="Un point de rendez-vous ne vaut que pour un seul sens de trajet."
+        )
+
+    stops: list[tuple[uuid.UUID, Coord]] = [(p.id, Coord(p.lat, p.lon)) for p in participants]
+    if not is_nearby_group(stops):
+        raise HTTPException(
+            status_code=422,
+            detail="Ces inscrits ne sont pas assez proches pour un point de rendez-vous commun.",
+        )
+
+    # Budget quotidien par compte (cf. Settings.max_meetup_points_per_user_per_day),
+    # même patron que le budget /solve ci-dessus.
+    since_budget = datetime.now(timezone.utc) - timedelta(days=1)
+    requests_today = await db.scalar(
+        select(func.count())
+        .select_from(EventLog)
+        .where(
+            EventLog.user_id == current_user.id,
+            EventLog.name == "meetup_point_requested",
+            EventLog.created_at >= since_budget,
+        )
+    )
+    if (requests_today or 0) >= settings.max_meetup_points_per_user_per_day:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Tu as atteint la limite de {settings.max_meetup_points_per_user_per_day} "
+                "points de rendez-vous proposés aujourd'hui. Réessaie demain."
+            ),
+        )
+
+    # Journalisé AVANT l'appel Places, pas après : c'est l'appel qui coûte,
+    # pas sa réussite (même choix que "solve_attempted" ci-dessus).
+    await log_event_now(
+        db, "meetup_point_requested", instance=settings.instance_name, event_id=event_id, user_id=current_user.id,
+        group_size=len(participants),
+    )
+
+    places = GooglePlacesClient(settings.google_places_api_key)
+    try:
+        point = await places.find_meetup_point(centroid([coord for _, coord in stops]))
+    except GooglePlacesError as exc:
+        # Une suggestion ratée n'est jamais une raison de faire échouer
+        # l'appelant — journalisée, dégradée en silence (même choix que le
+        # `continue` de get_meetup_suggestions ci-dessous).
+        await log_event_now(
+            db, "meetup_point_failed", instance=settings.instance_name, event_id=event_id, reason=str(exc),
+        )
+        return schemas.MeetupPointOut(point=None)
+
+    if point is None:
+        return schemas.MeetupPointOut(point=None)
+    return schemas.MeetupPointOut(
+        point=schemas.MeetupPoint(name=point.name, address=point.address, lat=point.lat, lon=point.lon)
     )
 
 

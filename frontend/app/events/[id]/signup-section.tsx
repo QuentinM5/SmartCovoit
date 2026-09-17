@@ -3,7 +3,6 @@
 import { useState, type FormEvent } from "react";
 import { Car, User } from "lucide-react";
 import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
-import { DirectionCheckboxes } from "@/components/direction";
 import { Button, ErrorNote, Field, inputClass } from "@/components/ui";
 import { networkMessage } from "@/lib/event-format";
 import type { Direction } from "@/lib/api";
@@ -36,11 +35,13 @@ function addressCopy(role: Role, directions: Direction[]): { label: string; hint
 }
 
 export function SignupSection({
-  defaultDirection,
+  direction,
   defaultName,
   onAdd,
 }: {
-  defaultDirection: Direction;
+  /** Sens imposé par l'onglet actif de la page — pas une valeur par défaut
+   * modifiable dans le formulaire, cf. `alsoOtherDirection` ci-dessous. */
+  direction: Direction;
   /** Nom du compte connecté — préremplit le champ (modifiable, pour
    * inscrire quelqu'un d'autre) plutôt que de partir d'un champ vide à
    * chaque fois. */
@@ -52,7 +53,15 @@ export function SignupSection({
   ) => Promise<void>;
 }) {
   const [role, setRole] = useState<Role>("passenger");
-  const [directions, setDirections] = useState<Direction[]>([defaultDirection]);
+  // Une personne peut participer à l'aller, au retour ou aux deux — même
+  // adresse dans les deux cas, seul son rôle change (cf. `addressCopy`). Le
+  // sens de base vient de l'onglet de la page ; cette case n'ajoute que
+  // l'autre. Ce booléen est symétrique (coché = les deux sens, décoché =
+  // seulement l'onglet actif) : il reste exact après une bascule d'onglet,
+  // pas besoin de le resynchroniser — ne pas ajouter de `useEffect` pour ça.
+  const [alsoOtherDirection, setAlsoOtherDirection] = useState(false);
+  const otherDirection: Direction = direction === "ramassage" ? "dispersion" : "ramassage";
+  const directions: Direction[] = alsoOtherDirection ? [direction, otherDirection] : [direction];
   const [name, setName] = useState(defaultName);
   const [seats, setSeats] = useState(3);
   const [address, setAddress] = useState<AddressValue>({ address: "", lat: null, lon: null });
@@ -61,7 +70,9 @@ export function SignupSection({
 
   const { label: addressLabel, hint: addressHint } = addressCopy(role, directions);
   const addressIncomplete = needsSelection(address, addressAvailable);
-  const canSubmit = !addressIncomplete && directions.length > 0;
+  // `directions` contient toujours au moins un sens (celui de l'onglet) :
+  // pas besoin de garder contre un tableau vide.
+  const canSubmit = !addressIncomplete;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -74,6 +85,9 @@ export function SignupSection({
     // pas besoin d'attendre le serveur pour rendre la main. Le nom revient
     // au nom du compte connecté plutôt qu'un champ vide — le cas courant est
     // de s'inscrire soi-même, pas d'enchaîner les inscriptions pour d'autres.
+    // `alsoOtherDirection` n'est volontairement pas remis à zéro : enchaîner
+    // plusieurs inscriptions « aller + retour » (une famille) est le cas
+    // courant.
     setName(defaultName);
     setAddress({ address: "", lat: null, lon: null });
     setSeats(3);
@@ -89,7 +103,9 @@ export function SignupSection({
 
   return (
     <section data-surface className="rounded-lg border border-line bg-surface p-4 sm:p-5">
-      <h2 className="text-sm font-semibold tracking-tight">S&apos;inscrire</h2>
+      <h2 className="text-sm font-semibold tracking-tight">
+        {direction === "dispersion" ? "S'inscrire au retour" : "S'inscrire à l'aller"}
+      </h2>
 
       <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-4">
         <fieldset>
@@ -127,7 +143,15 @@ export function SignupSection({
           </div>
         </fieldset>
 
-        <DirectionCheckboxes value={directions} onChange={setDirections} />
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={alsoOtherDirection}
+            onChange={(e) => setAlsoOtherDirection(e.target.checked)}
+            className="size-4 accent-ink"
+          />
+          {direction === "dispersion" ? "Je fais aussi l'aller" : "Je fais aussi le retour"}
+        </label>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nom">

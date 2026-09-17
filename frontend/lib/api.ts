@@ -271,18 +271,20 @@ export function updateAccessRequest(eventId: string, requestId: string, status: 
   });
 }
 
-/** Une suggestion affichée, jamais appliquée automatiquement — cf.
- * backend/app/meetup_clustering.py. */
-export interface MeetupSuggestion {
-  passenger_ids: string[];
+/** `point` nul = rien à proposer (clé Places non configurée côté serveur,
+ * aucun lieu autour, ou Places en échec) — jamais une erreur. */
+export interface MeetupPoint {
   name: string;
   address: string;
   lat: number;
   lon: number;
 }
 
-export function getMeetupSuggestions(eventId: string, direction: Direction) {
-  return request<MeetupSuggestion[]>(`/events/${eventId}/solution/meetup-suggestions?direction=${direction}`);
+export function suggestMeetupPoint(eventId: string, participantIds: string[]) {
+  return request<{ point: MeetupPoint | null }>(`/events/${eventId}/meetup-point`, {
+    method: "POST",
+    body: JSON.stringify({ participant_ids: participantIds }),
+  });
 }
 
 export function addDriver(

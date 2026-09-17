@@ -24,7 +24,7 @@ import {
   type Solution,
 } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
-import { DirectionPicker } from "@/components/direction";
+import { DirectionTabs } from "@/components/direction";
 import { Button, ButtonLink, ErrorNote, Header } from "@/components/ui";
 import { consumeNewEventSeed } from "@/lib/new-event-seed";
 import { networkMessage, moveStopOptimistic } from "@/lib/event-format";
@@ -32,6 +32,7 @@ import { resolveStops } from "@/lib/route";
 import { usePassengerDrag, type DragInfo } from "@/lib/use-passenger-drag";
 import { SolvingProgress } from "@/components/solving-progress";
 import { EventHeader } from "./event-header";
+import { NeighborGroups } from "./neighbor-groups";
 import { RosterSection, type ParticipantUpdate } from "./roster-section";
 import { RoutesSection } from "./routes-section";
 import { SignupSection } from "./signup-section";
@@ -75,6 +76,11 @@ export function EventPageClient({ id }: { id: string }) {
   // le solveur a produit — signalé tant qu'aucun nouveau calcul complet n'a
   // eu lieu (cf. RoutesSection, bandeau d'avertissement).
   const [hasManualChanges, setHasManualChanges] = useState(false);
+  // Ids (réels, pas provisoires) de la dernière inscription faite sur cette
+  // page — met en évidence son groupe dans NeighborGroups. Vidé à la
+  // bascule de sens affiché : l'inscription ne concerne pas forcément le
+  // sens qu'on vient d'afficher.
+  const [lastSignupIds, setLastSignupIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!pendingOvercapacity) return;
@@ -132,6 +138,7 @@ export function EventPageClient({ id }: { id: string }) {
     setSolution(null);
     setSolveError(null);
     setHasManualChanges(false);
+    setLastSignupIds([]);
     getSolution(id, next)
       .then(setSolution)
       .catch((err) => {
@@ -229,6 +236,9 @@ export function EventPageClient({ id }: { id: string }) {
       }));
       return { ...current, passengers: [...current.passengers, ...optimisticPassengers] };
     });
+    // De vrais ids serveur (cf. commentaire sur tempIds ci-dessus) : ils
+    // survivent à `refresh()`, contrairement à un id "optimistic-...".
+    setLastSignupIds(tempIds);
     // Seul le trajet du sens affiché est potentiellement périmé par cet
     // ajout ; l'autre sens n'est pas concerné.
     if (directions.includes(viewDirectionRef.current)) setSolution(null);
@@ -485,7 +495,6 @@ export function EventPageClient({ id }: { id: string }) {
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
           <EventHeader
             event={event}
-            viewDirection={viewDirection}
             canManage={canManage}
             uploadingCoverImage={uploadingCoverImage}
             deletingCoverImage={deletingCoverImage}
@@ -494,15 +503,23 @@ export function EventPageClient({ id }: { id: string }) {
             onDeleteCoverImage={handleDeleteCoverImage}
           />
 
+          <DirectionTabs value={viewDirection} onChange={handleViewDirectionChange} depotAddress={event.depot_address} />
+
           <div ref={signupSectionRef}>
             {authLoading ? null : user ? (
-              <SignupSection defaultDirection={viewDirection} defaultName={user.name} onAdd={handleAddParticipant} />
+              <SignupSection direction={viewDirection} defaultName={user.name} onAdd={handleAddParticipant} />
             ) : (
               <LoginPrompt message="Connecte-toi pour t'inscrire à cet événement." />
             )}
           </div>
 
-          <DirectionPicker value={viewDirection} onChange={handleViewDirectionChange} />
+          <NeighborGroups
+            eventId={id}
+            drivers={viewDrivers}
+            passengers={viewPassengers}
+            canRequestMeetupPoint={!!user}
+            highlightIds={lastSignupIds}
+          />
         </div>
 
         <RosterSection

@@ -7,12 +7,16 @@ import { DownloadIcsButton } from "@/components/download-ics-button";
 import { LocationMap } from "@/components/location-map";
 import { QrCodeButton } from "@/components/qr-code-button";
 import { ErrorNote } from "@/components/ui";
-import { coverImageUrl, type Direction, type EventDetail } from "@/lib/api";
+import { coverImageUrl, type EventDetail } from "@/lib/api";
 import { formatEventDate } from "@/lib/event-format";
 
+/**
+ * Formulation neutre : tout ce qui est au-dessus de la barre de sens doit
+ * rester vrai quel que soit l'onglet, sinon on recrée l'ambiguïté qu'elle
+ * est censée lever.
+ */
 export function EventHeader({
   event,
-  viewDirection,
   canManage,
   uploadingCoverImage,
   deletingCoverImage,
@@ -21,7 +25,6 @@ export function EventHeader({
   onDeleteCoverImage,
 }: {
   event: EventDetail;
-  viewDirection: Direction;
   /** Changer l'image de couverture est réservé à l'organisateur — sauf pour
    * un événement créé avant l'authentification (owner_id nul), resté ouvert
    * à tout compte connecté, cf. matrice d'autorisation côté backend. */
@@ -32,8 +35,6 @@ export function EventHeader({
   onUploadCoverImage: (file: File) => void;
   onDeleteCoverImage: () => void;
 }) {
-  const dispersion = viewDirection === "dispersion";
-
   return (
     <section>
       {/* Titre d'abord dans le DOM, visuels ensuite : sur mobile (colonne)
@@ -45,7 +46,7 @@ export function EventHeader({
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{event.name}</h1>
           <p className="mt-1 text-sm text-muted capitalize">{formatEventDate(event.event_date)}</p>
           <p className="mt-0.5 text-sm text-muted">
-            {dispersion ? "Retour depuis" : "Aller vers"} <span className="text-ink">{event.depot_address}</span>
+            Rendez-vous : <span className="text-ink">{event.depot_address}</span>
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <DownloadIcsButton event={event} />
