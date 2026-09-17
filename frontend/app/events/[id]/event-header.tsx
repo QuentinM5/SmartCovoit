@@ -3,11 +3,12 @@
 import { CalendarDays, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { CopyLinkButton } from "@/components/copy-link-button";
+import { CoverImage } from "@/components/cover-image";
 import { DownloadIcsButton } from "@/components/download-ics-button";
 import { LocationMap } from "@/components/location-map";
 import { QrCodeButton } from "@/components/qr-code-button";
 import { ErrorNote } from "@/components/ui";
-import { coverImageUrl, type EventDetail } from "@/lib/api";
+import { type EventDetail } from "@/lib/api";
 import { formatEventDate } from "@/lib/event-format";
 import { eventScheduleLines } from "@/lib/event-schedule";
 
@@ -22,6 +23,7 @@ export function EventHeader({
   uploadingCoverImage,
   deletingCoverImage,
   coverImageError,
+  coverImageRevision = 0,
   onUploadCoverImage,
   onDeleteCoverImage,
 }: {
@@ -33,6 +35,7 @@ export function EventHeader({
   uploadingCoverImage: boolean;
   deletingCoverImage: boolean;
   coverImageError: string | null;
+  coverImageRevision?: number;
   onUploadCoverImage: (file: File) => void;
   onDeleteCoverImage: () => void;
 }) {
@@ -79,10 +82,10 @@ export function EventHeader({
         <div className="flex shrink-0 items-start gap-2 lg:min-w-0">
           {event.has_cover_image && (
             <div className="group relative shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element -- servie par le backend, pas next/image (cas d'usage trop ponctuel pour justifier l'optimisation). */}
-              <img
-                src={coverImageUrl(event.id)}
-                alt=""
+              <CoverImage
+                eventId={event.id}
+                accessMode={event.access_mode}
+                revision={coverImageRevision}
                 className="aspect-[4/3] w-32 rounded-lg border border-line object-cover sm:w-44"
               />
               {canManage && (

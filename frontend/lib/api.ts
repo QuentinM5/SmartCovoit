@@ -415,6 +415,17 @@ export function coverImageUrl(eventId: string): string {
   return `${API_URL}/events/${eventId}/cover-image`;
 }
 
+/** Read protected images with the same session as other API requests. */
+export async function getCoverImage(eventId: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(coverImageUrl(eventId), {
+    headers: authHeaders(),
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) await handleResponse<never>(response);
+  return response.blob();
+}
+
 export function uploadCoverImage(eventId: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);

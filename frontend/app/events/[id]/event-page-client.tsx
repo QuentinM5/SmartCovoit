@@ -349,6 +349,7 @@ export function EventPageClient({ id }: { id: string }) {
   }
 
   const [coverImageError, setCoverImageError] = useState<string | null>(null);
+  const [coverImageRevision, setCoverImageRevision] = useState(0);
   const [uploadingCoverImage, setUploadingCoverImage] = useState(false);
   const [deletingCoverImage, setDeletingCoverImage] = useState(false);
 
@@ -357,6 +358,7 @@ export function EventPageClient({ id }: { id: string }) {
     setUploadingCoverImage(true);
     try {
       await uploadCoverImage(id, file);
+      setCoverImageRevision((revision) => revision + 1);
       setEvent((current) => (current ? { ...current, has_cover_image: true } : current));
     } catch (err) {
       setCoverImageError(networkMessage(err, "L'image n'a pas pu être envoyée. Réessaie."));
@@ -506,6 +508,7 @@ export function EventPageClient({ id }: { id: string }) {
           uploadingCoverImage={uploadingCoverImage}
           deletingCoverImage={deletingCoverImage}
           coverImageError={coverImageError}
+          coverImageRevision={coverImageRevision}
           onUploadCoverImage={handleUploadCoverImage}
           onDeleteCoverImage={handleDeleteCoverImage}
         />

@@ -659,7 +659,7 @@ async def get_cover_image(
     return Response(
         content=event.cover_image,
         media_type=event.cover_image_content_type or "application/octet-stream",
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={"Cache-Control": "private, no-store"},
     )
 
 
