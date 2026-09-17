@@ -4,7 +4,7 @@ du réseau, même philosophie que test_impact.py."""
 from __future__ import annotations
 
 from app.distance.types import Coord
-from app.meetup_clustering import centroid, cluster_nearby_stops, is_nearby_group
+from app.meetup_clustering import centroid, is_nearby_group
 
 # Trois points à Montréal, très proches les uns des autres (quelques
 # centaines de mètres) : doivent former un seul groupe à 2 km.
@@ -24,38 +24,6 @@ CHAIN_C = Coord(45.5270, -73.5673)
 # Deux points à ~5 km l'un de l'autre : au-delà du diamètre de 4 km.
 FAR_PAIR_A = Coord(45.5000, -73.5673)
 FAR_PAIR_B = Coord(45.5450, -73.5673)
-
-
-def test_cluster_nearby_stops_groups_close_points() -> None:
-    stops = [("a", NEAR_A), ("b", NEAR_B), ("c", NEAR_C)]
-    groups = cluster_nearby_stops(stops)
-    assert len(groups) == 1
-    assert {pid for pid, _ in groups[0]} == {"a", "b", "c"}
-
-
-def test_cluster_nearby_stops_ignores_lone_far_point() -> None:
-    stops = [("a", NEAR_A), ("b", NEAR_B), ("far", FAR)]
-    groups = cluster_nearby_stops(stops)
-    # "far" seul ne forme pas de groupe (minimum 2 membres) — seul le
-    # groupe proche est renvoyé.
-    assert len(groups) == 1
-    assert {pid for pid, _ in groups[0]} == {"a", "b"}
-
-
-def test_cluster_nearby_stops_no_group_when_all_alone() -> None:
-    stops = [("a", NEAR_A), ("far", FAR)]
-    assert cluster_nearby_stops(stops) == []
-
-
-def test_cluster_nearby_stops_empty_input() -> None:
-    assert cluster_nearby_stops([]) == []
-
-
-def test_cluster_nearby_stops_respects_custom_radius() -> None:
-    # NEAR_A et NEAR_B sont à plus de 200 m mais moins de 2 km l'un de
-    # l'autre : un rayon de 100 m ne doit pas les regrouper.
-    stops = [("a", NEAR_A), ("b", NEAR_B)]
-    assert cluster_nearby_stops(stops, radius_m=100) == []
 
 
 def test_centroid_averages_coordinates() -> None:
@@ -84,9 +52,8 @@ def test_is_nearby_group_false_for_empty_input() -> None:
 
 def test_is_nearby_group_respects_custom_radius() -> None:
     # NEAR_A et NEAR_B sont à plus de 200 m mais moins de 2 km l'un de
-    # l'autre (cf. test_cluster_nearby_stops_respects_custom_radius) : au
-    # rayon par défaut (diamètre autorisé 4 km) ils passent, mais un rayon de
-    # 100 m (diamètre autorisé 200 m) les refuse.
+    # l'autre : au rayon par défaut (diamètre autorisé 4 km) ils passent,
+    # mais un rayon de 100 m (diamètre autorisé 200 m) les refuse.
     stops = [("a", NEAR_A), ("b", NEAR_B)]
     assert is_nearby_group(stops) is True
     assert is_nearby_group(stops, radius_m=100) is False

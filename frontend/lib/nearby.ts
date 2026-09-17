@@ -46,10 +46,14 @@ function hasUsableCoords(member: NearbyMember): boolean {
 }
 
 /**
- * Même glouton que `cluster_nearby_stops` côté backend : chaque groupe part
- * du premier membre encore libre (la "graine") et y rattache tout membre
- * restant à `radiusM` ou moins DE CETTE GRAINE — pas du centroïde du groupe
- * en formation. Ne renvoie que les groupes d'au moins deux membres.
+ * Glouton graine+rayon : chaque groupe part du premier membre encore libre
+ * (la "graine") et y rattache tout membre restant à `radiusM` ou moins DE
+ * CETTE GRAINE — pas du centroïde du groupe en formation. Ne renvoie que les
+ * groupes d'au moins deux membres. Le serveur revérifie ce groupe avant tout
+ * appel Places facturé via `is_nearby_group` (backend/app/
+ * meetup_clustering.py), avec un critère indépendant de l'ordre : une
+ * divergence entre les deux implémentations produit au pire un refus,
+ * jamais une facture inattendue.
  */
 export function groupNearbyParticipants(
   members: NearbyMember[],

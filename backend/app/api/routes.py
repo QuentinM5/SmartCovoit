@@ -50,7 +50,7 @@ from app.distance.types import Coord, MatrixProviderWithGeometry, Polyline
 from app.geocoding.nominatim import NominatimClient
 from app.geocoding.types import GeocodingError
 from app.impact import co2_saved_kg
-from app.meetup_clustering import centroid, cluster_nearby_stops, is_nearby_group
+from app.meetup_clustering import centroid, is_nearby_group
 from app.solver.errors import SolverError
 from app.solver.model import Direction, DriverSpec, PassengerSpec, Route as SolverRoute, SolveRequest
 from app.solver.vrp import solve
@@ -1205,9 +1205,9 @@ async def suggest_meetup_point(
     conducteurs/passagers choisi explicitement par le client, indépendamment
     de tout calcul de tournée — cf. `NeighborGroups` côté frontend, qui
     regroupe localement et gratuitement (haversine) avant de proposer ce
-    bouton. Remplace `get_meetup_suggestions` comme point d'entrée visible :
-    celui-ci n'existe qu'après un `/solve`, ce qui enterrait la
-    fonctionnalité derrière un calcul que personne n'a forcément lancé.
+    bouton. A remplacé un ancien endpoint qui n'existait qu'après un
+    `/solve`, ce qui enterrait la fonctionnalité derrière un calcul que
+    personne n'avait forcément lancé.
 
     N'importe quel compte connecté (approuvé si l'événement l'exige) peut
     appeler cet endpoint, comme `/solve` : ce n'est pas une modification
@@ -1287,8 +1287,7 @@ async def suggest_meetup_point(
         point = await places.find_meetup_point(centroid([coord for _, coord in stops]))
     except GooglePlacesError as exc:
         # Une suggestion ratée n'est jamais une raison de faire échouer
-        # l'appelant — journalisée, dégradée en silence (même choix que le
-        # `continue` de get_meetup_suggestions ci-dessous).
+        # l'appelant — journalisée, dégradée en silence.
         await log_event_now(
             db, "meetup_point_failed", instance=settings.instance_name, event_id=event_id, reason=str(exc),
         )
@@ -1299,65 +1298,6 @@ async def suggest_meetup_point(
     return schemas.MeetupPointOut(
         point=schemas.MeetupPoint(name=point.name, address=point.address, lat=point.lat, lon=point.lon)
     )
-
-
-@router.get("/events/{event_id}/solution/meetup-suggestions", response_model=list[schemas.MeetupSuggestion])
-async def get_meetup_suggestions(
-    event_id: uuid.UUID,
-    direction: Direction,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-) -> list[schemas.MeetupSuggestion]:
-    """Regroupe les arrêts passagers proches (< 2 km) d'une même tournée déjà
-    calculée et suggère un vrai lieu de rassemblement (station, parking)
-    autour de chaque groupe via Google Places — cf. app.meetup_clustering et
-    app.distance.google_places. Une suggestion affichée, jamais appliquée
-    automatiquement : ne modifie ni les inscriptions ni la tournée.
-
-    Calculée à la demande (pas à chaque /solve) : chaque appel ici coûte des
-    requêtes Places facturées, un clic organisateur explicite plutôt qu'un
-    calcul systématique. Liste vide (pas une erreur) si la clé n'est pas
-    configurée — dégradation cohérente avec le reste de l'app.
-    """
-    event = await _load_event_with_participants(db, event_id)
-    await _check_can_view_event(db, event, current_user)
-    if not settings.google_places_api_key:
-        return []
-
-    record = await _load_latest_solution_record_or_404(db, event_id, direction)
-    routes = [schemas.RouteOut.model_validate(r) for r in record.payload]
-    passengers_by_id = {p.id: p for p in event.passengers}
-    places = GooglePlacesClient(settings.google_places_api_key)
-
-    suggestions: list[schemas.MeetupSuggestion] = []
-    for route in routes:
-        stops: list[tuple[uuid.UUID, Coord]] = [
-            (stop.passenger_id, Coord(passengers_by_id[stop.passenger_id].lat, passengers_by_id[stop.passenger_id].lon))
-            for stop in route.stops
-            if stop.passenger_id is not None and stop.passenger_id in passengers_by_id
-        ]
-        for group in cluster_nearby_stops(stops):
-            group_ids = [pid for pid, _ in group]
-            group_center = centroid([coord for _, coord in group])
-            try:
-                point = await places.find_meetup_point(group_center)
-            except GooglePlacesError as exc:
-                # Une suggestion ratée n'est jamais une raison de faire
-                # échouer l'ensemble de la réponse — journalisée, ignorée.
-                await log_event_now(
-                    db, "meetup_suggestion_failed", instance=settings.instance_name,
-                    event_id=event_id, reason=str(exc),
-                )
-                continue
-            if point is not None:
-                suggestions.append(
-                    schemas.MeetupSuggestion(
-                        passenger_ids=group_ids, name=point.name, address=point.address,
-                        lat=point.lat, lon=point.lon,
-                    )
-                )
-    return suggestions
 
 
 @router.post("/events/{event_id}/solution/move-stop", response_model=schemas.SolutionOut, status_code=201)

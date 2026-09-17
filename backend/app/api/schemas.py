@@ -326,17 +326,6 @@ class AccessRequestUpdate(BaseModel):
     status: Literal["approved", "denied"]
 
 
-class MeetupSuggestion(BaseModel):
-    """Cf. GET /events/{id}/solution/meetup-suggestions — une suggestion
-    affichée, jamais appliquée automatiquement (cf. plan)."""
-
-    passenger_ids: list[uuid.UUID]
-    name: str
-    address: str
-    lat: float
-    lon: float
-
-
 class MeetupPoint(BaseModel):
     name: str
     address: str
