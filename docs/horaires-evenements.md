@@ -1,27 +1,34 @@
 # Horaires des événements
 
-L'arrivée au rassemblement et le départ pour la dispersion sont facultatifs,
-indépendants et modifiables. Le départ peut être le lendemain. Les heures sont
+L'heure de début et l'heure de fin de l'événement sont facultatives,
+indépendantes et modifiables. La date de fin est initialisée à celle du début,
+mais peut être choisie indépendamment pour un événement sur plusieurs jours. Les heures sont
 celles du lieu de l'événement, même si l'organisateur ou le participant consulte
 la page depuis un autre fuseau.
 
 ## API et fuseau
 
-`POST /events` et `PATCH /events/{id}` acceptent `arrival_time`, `departure_time`
-(heure locale à la minute, `HH:MM`, ou `null`) et `departure_next_day` (booléen).
+`POST /events` et `PATCH /events/{id}` acceptent `event_date` (date de début),
+`end_date` (date de fin, défaut = début), `arrival_time` (heure de début) et
+`departure_time` (heure de fin), à la minute (`HH:MM`, ou `null`).
+`departure_next_day` reste accepté uniquement pour les anciens clients ; il
+n'est plus proposé dans le formulaire. La date explicite est prioritaire.
 Les réponses exposent aussi `timezone`, identifiant IANA déterminé côté serveur
 à partir des coordonnées avec timezonefinder. Aucun service de fuseau payant.
 
-Un champ PATCH absent reste inchangé ; `null` efface un horaire. Effacer le
-départ désactive aussi « lendemain ». Si les deux heures existent, la dispersion
-ne peut pas précéder le rassemblement. Une heure inexistante au passage à
+Un champ PATCH absent reste inchangé ; `null` efface un horaire sans effacer sa
+date. `end_date: null` remet la fin au jour du début. Changer uniquement la date
+de début par API décale la période en conservant son nombre de jours.
+La fin ne peut pas précéder le début, même si les heures ne sont pas renseignées.
+Une heure inexistante au passage à
 l'heure d'été est refusée ; une heure répétée à l'automne utilise la première
 occurrence. Changer de lieu conserve les heures locales et recalcule le fuseau.
 
 La modification d'un horaire invalide les solutions du sens concerné. Changer
-la date, le lieu ou le fuseau invalide les deux sens. Les anciennes solutions
-JSON sans horaires restent lisibles. L'export ICS reste en journée entière et
-mentionne les horaires locaux et le fuseau dans la description.
+la date de fin invalide la dispersion ; changer celle du début, le lieu ou le
+fuseau invalide les deux sens. Les anciennes solutions JSON sans horaires restent
+lisibles. L'export ICS reste en journées entières jusqu'à la date de fin incluse
+et mentionne les horaires locaux et le fuseau dans la description.
 
 ## Estimation des tournées
 
@@ -48,10 +55,11 @@ la limite de trois appels par tournée n'est pas un plafond mensuel du compte Ma
 ## Livraison
 
 1. Vérifier les tests, la compilation et le SQL : depuis `backend`,
-   `.venv/Scripts/python.exe -m alembic upgrade 0008:0009 --sql` sous Windows.
-2. Appliquer la migration additive `0009` avant le nouveau backend. Les quatre
-   colonnes sont compatibles avec l'ancien code ; ne pas les supprimer lors
-   d'un simple retour arrière applicatif.
+   `.venv/Scripts/python.exe -m alembic upgrade 0009:0010 --sql` sous Windows.
+2. Appliquer les migrations additives avant le nouveau backend. `0009` ajoute
+   les horaires et le fuseau ; `0010` ajoute `end_date` et reprend les anciennes
+   valeurs « lendemain » en vraies dates. Les colonnes sont compatibles avec
+   l'ancien code ; ne pas les supprimer lors d'un retour arrière applicatif.
 3. Déployer les deux backends selon `docs/deploiement.md`, puis exécuter depuis
    leur environnement `python -m scripts.backfill_event_timezones`. Ce traitement
    ne remplit que les fuseaux absents ; il peut être relancé et ne contacte aucune API.

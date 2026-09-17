@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { AddressInput, needsSelection, type AddressValue } from "@/components/address-input";
 import { Button, ErrorNote, Field, inputClass } from "@/components/ui";
+import { addCalendarDays } from "@/lib/event-schedule";
 import { networkMessage } from "@/lib/event-format";
 
 export interface EventFormValues {
@@ -10,7 +11,7 @@ export interface EventFormValues {
   eventDate: string;
   arrivalTime: string;
   departureTime: string;
-  departureNextDay: boolean;
+  endDate: string;
   description: string;
   depot: AddressValue;
 }
@@ -23,11 +24,13 @@ export interface EventFormValues {
  */
 export function EventForm({
   initialValues,
+  initialEndDayOffset = 0,
   submitLabel,
   submittingLabel,
   onSubmit,
 }: {
   initialValues?: Partial<EventFormValues>;
+  initialEndDayOffset?: number;
   submitLabel: string;
   submittingLabel: string;
   onSubmit: (values: EventFormValues) => void | Promise<void>;
@@ -36,7 +39,7 @@ export function EventForm({
   const [eventDate, setEventDate] = useState(initialValues?.eventDate ?? "");
   const [arrivalTime, setArrivalTime] = useState(initialValues?.arrivalTime?.slice(0, 5) ?? "");
   const [departureTime, setDepartureTime] = useState(initialValues?.departureTime?.slice(0, 5) ?? "");
-  const [departureNextDay, setDepartureNextDay] = useState(initialValues?.departureNextDay ?? false);
+  const [endDate, setEndDate] = useState(initialValues?.endDate ?? initialValues?.eventDate ?? "");
   const [description, setDescription] = useState(initialValues?.description ?? "");
   const [depot, setDepot] = useState<AddressValue>(
     initialValues?.depot ?? { address: "", lat: null, lon: null },
@@ -49,15 +52,15 @@ export function EventForm({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (depotIncomplete || !eventDate || submitting) return;
+    if (depotIncomplete || !eventDate || !endDate || submitting) return;
     setError(null);
-    if (arrivalTime && departureTime && !departureNextDay && departureTime < arrivalTime) {
-      setError("Le départ pour la dispersion précède l’arrivée. Coche « Départ le lendemain » si nécessaire.");
+    if (endDate < eventDate || (endDate === eventDate && arrivalTime && departureTime && departureTime < arrivalTime)) {
+      setError("La fin de l’événement ne peut pas précéder son début.");
       return;
     }
     setSubmitting(true);
     try {
-      await onSubmit({ name, eventDate, arrivalTime, departureTime, departureNextDay: !!departureTime && departureNextDay, description, depot });
+      await onSubmit({ name, eventDate, arrivalTime, departureTime, endDate, description, depot });
       // Pas de `setSubmitting(false)` ici : un onSubmit réussi navigue
       // généralement ailleurs (création ou retour à la page événement) —
       // le remettre juste avant le démontage ne ferait que clignoter.
@@ -79,31 +82,31 @@ export function EventForm({
         />
       </Field>
 
-      <Field label="Date de l'événement">
+      <Field label="Date de début de l’événement">
         <input
           required
           type="date"
           value={eventDate}
-          onChange={(e) => setEventDate(e.target.value)}
+          onChange={(e) => {
+            const nextDate = e.target.value;
+            if (endDate === eventDate) setEndDate(nextDate && !eventDate ? addCalendarDays(nextDate, initialEndDayOffset) : nextDate);
+            else if (!endDate && nextDate) setEndDate(addCalendarDays(nextDate, initialEndDayOffset));
+            setEventDate(nextDate);
+          }}
           className={`${inputClass} tabular font-mono`}
         />
       </Field>
 
       <div className="flex flex-col gap-4">
-        <p className="text-xs text-muted">Horaires facultatifs, en heure locale du lieu de l’événement.</p>
-        <Field label="Heure d’arrivée au rassemblement — facultatif">
+        <Field label="Heure de début de l’événement — facultatif">
           <input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className={`${inputClass} min-w-0 tabular font-mono`} />
         </Field>
-        <Field label="Heure de départ pour la dispersion — facultatif">
-          <input type="time" value={departureTime} onChange={(e) => {
-            setDepartureTime(e.target.value);
-            if (!e.target.value) setDepartureNextDay(false);
-          }} className={`${inputClass} min-w-0 tabular font-mono`} />
+        <Field label="Date de fin de l’événement">
+          <input required type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={`${inputClass} min-w-0 tabular font-mono`} />
         </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={departureNextDay && !!departureTime} disabled={!departureTime} onChange={(e) => setDepartureNextDay(e.target.checked)} />
-          Départ le lendemain
-        </label>
+        <Field label="Heure de fin de l’événement — facultatif">
+          <input type="time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} className={`${inputClass} min-w-0 tabular font-mono`} />
+        </Field>
       </div>
 
       <Field label="Adresse de l'événement" hint="Là où tout le monde se retrouve.">
@@ -133,7 +136,7 @@ export function EventForm({
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div>
-        <Button type="submit" disabled={depotIncomplete || !eventDate || submitting}>
+        <Button type="submit" disabled={depotIncomplete || !eventDate || !endDate || submitting}>
           {submitting ? submittingLabel : submitLabel}
         </Button>
       </div>

@@ -81,6 +81,7 @@ class EventCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     depot_address: str = Field(min_length=1, max_length=500)
     event_date: date_
+    end_date: date_ | None = None
     arrival_time: time | None = None
     departure_time: time | None = None
     departure_next_day: bool = False
@@ -103,6 +104,7 @@ class EventOut(BaseModel):
     depot_lat: float
     depot_lon: float
     event_date: date_
+    end_date: date_ | None = None
     arrival_time: time | None = None
     departure_time: time | None = None
     departure_next_day: bool = False
@@ -140,6 +142,7 @@ class EventUpdate(Located):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     event_date: date_ | None = None
+    end_date: date_ | None = None
     arrival_time: time | None = None
     departure_time: time | None = None
     departure_next_day: bool = False

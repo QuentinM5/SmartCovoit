@@ -6,7 +6,7 @@
 
 import type { EventDetail } from "@/lib/api";
 import { SITE_URL } from "@/lib/site";
-import { eventScheduleLines } from "@/lib/event-schedule";
+import { eventEndDate, eventScheduleLines } from "@/lib/event-schedule";
 
 const CRLF = "\r\n";
 // Marge sous 76 (limite RFC) : les lignes se replient à un multiple d'octets
@@ -76,7 +76,7 @@ export function buildEventIcs(event: EventDetail): string {
     `UID:${event.id}@smartcovoit.qmeyer.fr`,
     `DTSTAMP:${nowStamp()}`,
     `DTSTART;VALUE=DATE:${toIcsDate(event.event_date)}`,
-    `DTEND;VALUE=DATE:${toIcsDate(nextDay(event.event_date))}`,
+    `DTEND;VALUE=DATE:${toIcsDate(nextDay(eventEndDate(event)))}`,
     `SUMMARY:${escapeText(event.name)}`,
     `LOCATION:${escapeText(event.depot_address)}`,
     `GEO:${event.depot_lat};${event.depot_lon}`,

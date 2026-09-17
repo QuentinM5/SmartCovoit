@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { eventScheduleLines, formatRouteInstant } from "@/lib/event-schedule";
+import { eventDaySpan, eventEndDate, eventScheduleLines, formatRouteInstant } from "@/lib/event-schedule";
 
 describe("event schedule", () => {
   it("ne crée pas d’horaire pour les anciens événements", () => {
-    expect(eventScheduleLines({})).toEqual([]);
+    expect(eventScheduleLines({ event_date: "2026-12-24" })).toEqual([]);
   });
   it("affiche les heures locales et le lendemain", () => {
-    expect(eventScheduleLines({ arrival_time: "18:30:00", departure_time: "02:00:00", departure_next_day: true, timezone: "America/Toronto" })).toEqual([
-      "Arrivée au rassemblement : 18:30", "Départ pour la dispersion : 02:00 (lendemain)", "Heure locale du lieu · America/Toronto",
+    expect(eventScheduleLines({ event_date: "2026-12-24", arrival_time: "18:30:00", departure_time: "02:00:00", departure_next_day: true, timezone: "America/Toronto" })).toEqual([
+      "Début de l’événement : 24/12/2026 à 18:30", "Fin de l’événement : 25/12/2026 à 02:00", "Heure locale du lieu · America/Toronto",
     ]);
   });
   it("convertit les instants dans le fuseau du lieu, y compris la veille", () => {
@@ -19,4 +19,11 @@ describe("event schedule", () => {
     expect(formatRouteInstant("2026-12-24T03:30:00Z", null)).toBeNull();
     expect(formatRouteInstant("invalide", "Europe/Paris")).toBeNull();
   });
+  it("affiche plusieurs jours sans horaires et privilégie la date explicite", () => {
+    const event = { event_date: "2026-12-31", end_date: "2027-01-03", departure_next_day: true };
+    expect(eventEndDate(event)).toBe("2027-01-03");
+    expect(eventDaySpan(event)).toBe(3);
+    expect(eventScheduleLines(event)).toEqual(["Début de l’événement : 31/12/2026", "Fin de l’événement : 03/01/2027"]);
+  });
+
 });

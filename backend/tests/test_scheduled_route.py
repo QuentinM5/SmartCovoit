@@ -29,6 +29,17 @@ async def test_outbound_uses_local_next_day_and_single_request():
     assert result["estimation_basis"] == "traffic"
 
 
+async def test_outbound_uses_selected_finish_date_across_dst_boundary():
+    provider = SimpleNamespace(route=AsyncMock(return_value=TrafficRoute(1800, [])))
+    e = event(event_date=date(2026, 10, 31), end_date=date(2026, 11, 3),
+              departure_time=time(9), departure_next_day=False)
+    _, result = await scheduled_traffic(provider, [], e, Direction.DISPERSION, None, now=NOW)
+    depart = datetime(2026, 11, 3, 14, tzinfo=timezone.utc)
+    provider.route.assert_awaited_once_with([], depart_at=depart)
+    assert result["estimated_departure_at"] == depart
+    assert result["estimated_arrival_at"] == depart + timedelta(minutes=30)
+
+
 async def test_inbound_stops_at_three_queries_with_consistent_last_pair():
     provider = SimpleNamespace(route=AsyncMock(side_effect=[TrafficRoute(s, []) for s in (3600, 5400, 7200)]))
     route, result = await scheduled_traffic(provider, [], event(), Direction.RAMASSAGE, 1800, now=NOW)

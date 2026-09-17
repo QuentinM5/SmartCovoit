@@ -20,6 +20,7 @@ import {
 import { EventForm, type EventFormValues } from "@/components/event-form";
 import { CURRENCIES, DEFAULT_CONSUMPTION_L_PER_100KM, DEFAULT_CURRENCY, DEFAULT_FUEL_PRICE_PER_L } from "@/lib/cost";
 import { Button, ErrorNote, Field, Header, inputClass } from "@/components/ui";
+import { eventDaySpan, eventEndDate } from "@/lib/event-schedule";
 import { networkMessage } from "@/lib/event-format";
 import { LoginPrompt } from "../event-notices";
 
@@ -42,7 +43,7 @@ export function EditEventClient({ id }: { id: string }) {
       event_date: values.eventDate,
       arrival_time: values.arrivalTime || null,
       departure_time: values.departureTime || null,
-      departure_next_day: values.departureNextDay,
+      end_date: values.endDate,
       description: values.description.trim() || null,
       lat: values.depot.lat,
       lon: values.depot.lon,
@@ -111,7 +112,7 @@ export function EditEventClient({ id }: { id: string }) {
               eventDate: event.event_date,
               arrivalTime: event.arrival_time ?? "",
               departureTime: event.departure_time ?? "",
-              departureNextDay: event.departure_next_day ?? false,
+              endDate: eventEndDate(event),
               description: event.description ?? "",
               depot: { address: event.depot_address, lat: event.depot_lat, lon: event.depot_lon },
             }}
@@ -171,7 +172,7 @@ function DuplicateSection({ event }: { event: EventDetail }) {
         event_date: values.eventDate,
         arrival_time: values.arrivalTime || null,
         departure_time: values.departureTime || null,
-        departure_next_day: values.departureNextDay,
+        end_date: values.endDate,
         description: values.description.trim() || null,
         lat: values.depot.lat,
         lon: values.depot.lon,
@@ -255,6 +256,7 @@ function DuplicateSection({ event }: { event: EventDetail }) {
           </div>
 
           <EventForm
+            initialEndDayOffset={eventDaySpan(event)}
             initialValues={{
               name: event.name,
               // Date volontairement vide : l'ancienne n'a pas de sens pour
@@ -263,7 +265,7 @@ function DuplicateSection({ event }: { event: EventDetail }) {
               eventDate: "",
               arrivalTime: event.arrival_time ?? "",
               departureTime: event.departure_time ?? "",
-              departureNextDay: event.departure_next_day ?? false,
+              endDate: "",
               description: event.description ?? "",
               depot: { address: event.depot_address, lat: event.depot_lat, lon: event.depot_lon },
             }}

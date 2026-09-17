@@ -71,6 +71,7 @@ class Event(Base):
     depot_lat: Mapped[float] = mapped_column(Float)
     depot_lon: Mapped[float] = mapped_column(Float)
     event_date: Mapped[date_] = mapped_column(Date)
+    end_date: Mapped[date_ | None] = mapped_column(Date, nullable=True)
     arrival_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     departure_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     departure_next_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

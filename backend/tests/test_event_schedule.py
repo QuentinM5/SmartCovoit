@@ -13,7 +13,7 @@ from app.solver.model import Direction
 
 
 def event(**changes):
-    values = dict(id=uuid.uuid4(), owner_id=None, event_date=date(2026, 9, 19),
+    values = dict(id=uuid.uuid4(), owner_id=None, event_date=date(2026, 9, 19), end_date=None,
                   arrival_time=time(18), departure_time=time(22), departure_next_day=False,
                   timezone="America/Toronto", depot_address="Montreal", depot_lat=45.5019, depot_lon=-73.5674)
     return SimpleNamespace(**(values | changes))
@@ -59,13 +59,12 @@ def test_next_day_departure_and_previous_day_pickup():
 def test_no_clocks_and_missing_duration_do_not_invent_schedule():
     e = event(arrival_time=None, departure_time=None, departure_next_day=True, timezone=None)
     validate_schedule(e)
-    assert e.departure_next_day is False
     assert typical_schedule(e, Direction.RAMASSAGE, 1800) == {}
     assert typical_schedule(event(), Direction.RAMASSAGE, None) == {}
 
 
-def test_departure_before_arrival_requires_next_day():
-    with pytest.raises(ValueError, match="lendemain"):
+def test_end_before_start_requires_later_date():
+    with pytest.raises(ValueError):
         validate_schedule(event(departure_time=time(17)))
 
 
@@ -77,6 +76,7 @@ def test_patch_distinguishes_omitted_clock_from_explicit_null():
 @pytest.mark.parametrize("payload,directions", [
     ({"arrival_time": None}, [Direction.RAMASSAGE]),
     ({"departure_time": None}, [Direction.DISPERSION]),
+    ({"end_date": "2026-09-22"}, [Direction.DISPERSION]),
     ({"event_date": "2026-09-20"}, [Direction.RAMASSAGE, Direction.DISPERSION]),
     ({"arrival_time": "18:00"}, []),
     ({"name": "Updated"}, []),
@@ -98,7 +98,7 @@ async def test_update_invalidates_only_affected_solutions(monkeypatch, payload, 
         db.execute.assert_not_awaited()
     if "departure_time" in payload:
         assert e.departure_time is None
-        assert e.departure_next_day is False
+        assert e.end_date == date(2026, 9, 20)
     if "arrival_time" not in payload:
         assert e.arrival_time == time(18)
     db.commit.assert_awaited_once()
@@ -116,6 +116,7 @@ async def test_create_resolves_timezone_and_preserves_optional_hours(monkeypatch
     assert result.timezone == "Europe/Paris"
     assert result.arrival_time == time(18)
     assert result.departure_next_day is True
+    assert result.end_date == date(2026, 9, 20)
     db.commit.assert_awaited_once()
 
 
@@ -129,6 +130,56 @@ async def test_invalid_creation_is_not_committed(monkeypatch):
             settings=SimpleNamespace(instance_name="test"))
     assert exc.value.status_code == 422
     db.commit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("payload,expected", [
+    ({}, date(2026, 9, 19)),
+    ({"end_date": None}, date(2026, 9, 19)),
+    ({"end_date": "2026-09-22"}, date(2026, 9, 22)),
+    ({"end_date": "2026-09-22", "arrival_time": "18:00", "departure_time": "09:00"}, date(2026, 9, 22)),
+])
+async def test_create_defaults_end_date_and_accepts_multiday_without_clocks(monkeypatch, payload, expected):
+    monkeypatch.setattr(routes, "log_event", Mock())
+    db = SimpleNamespace(add=Mock(), commit=AsyncMock(), refresh=AsyncMock())
+    result = await routes.create_event(
+        schemas.EventCreate(name="Weekend", depot_address="Paris", lat=48.8566, lon=2.3522,
+                            event_date="2026-09-19", **payload),
+        current_user=SimpleNamespace(id=uuid.uuid4()), db=db, geocoder=Mock(),
+        settings=SimpleNamespace(instance_name="test"))
+    assert result.end_date == expected
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.parametrize("payload,expected", [
+    ({"departure_time": None}, date(2026, 9, 22)),
+    ({"event_date": "2026-09-20"}, date(2026, 9, 23)),
+    ({"end_date": None}, date(2026, 9, 19)),
+    ({"end_date": "2026-09-24"}, date(2026, 9, 24)),
+    ({"departure_next_day": False}, date(2026, 9, 22)),
+    ({"departure_next_day": True}, date(2026, 9, 20)),
+    ({"departure_next_day": True, "end_date": "2026-09-24"}, date(2026, 9, 24)),
+])
+async def test_multiday_update_preserves_or_explicitly_changes_finish_date(monkeypatch, payload, expected):
+    e = event(end_date=date(2026, 9, 22))
+    monkeypatch.setattr(routes, "_get_event_or_404", AsyncMock(return_value=e))
+    monkeypatch.setattr(routes, "log_event", Mock())
+    db = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock(), refresh=AsyncMock())
+    await routes.update_event(e.id, schemas.EventUpdate(**payload),
+                              current_user=SimpleNamespace(id=uuid.uuid4()), db=db,
+                              geocoder=Mock(), settings=SimpleNamespace(instance_name="test"))
+    assert e.end_date == expected
+    db.commit.assert_awaited_once()
+
+
+def test_end_date_is_validated_without_optional_clocks():
+    with pytest.raises(ValueError):
+        validate_schedule(event(end_date=date(2026, 9, 18), arrival_time=None, departure_time=None))
+
+
+def test_explicit_end_date_overrides_legacy_next_day_flag():
+    e = event(end_date=date(2026, 9, 22), departure_time=time(9), departure_next_day=True)
+    validate_schedule(e)
+    assert schedule_target(e, Direction.DISPERSION).isoformat() == "2026-09-22T13:00:00+00:00"
 
 
 async def test_venue_change_recomputes_timezone_retains_wall_clocks_and_invalidates_both(monkeypatch):
@@ -147,7 +198,8 @@ async def test_venue_change_recomputes_timezone_retains_wall_clocks_and_invalida
     assert e.id in statement.compile().params.values()
 
 
-@pytest.mark.parametrize("payload", [{"event_date": None}, {"departure_time": "17:00"}])
+@pytest.mark.parametrize("payload", [{"event_date": None}, {"departure_time": "17:00"},
+                                     {"end_date": "2026-09-18", "arrival_time": None, "departure_time": None}])
 async def test_invalid_update_never_commits_or_removes_solutions(monkeypatch, payload):
     e = event()
     monkeypatch.setattr(routes, "_get_event_or_404", AsyncMock(return_value=e))

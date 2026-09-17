@@ -30,15 +30,18 @@ def local_instant(day, clock, zone: str) -> datetime:
     return instant
 
 
+def event_end_date(event):
+    """La colonne nullable permet aussi de lire les écritures d'un ancien backend."""
+    return getattr(event, "end_date", None) or event.event_date + timedelta(days=bool(event.departure_next_day))
+
+
 def schedule_target(event, direction: Direction) -> datetime | None:
     clock = event.arrival_time if direction == Direction.RAMASSAGE else event.departure_time
     if clock is None:
         return None
     if not event.timezone:
         raise ValueError("Le fuseau horaire du lieu est nécessaire pour utiliser cet horaire.")
-    day = event.event_date
-    if direction == Direction.DISPERSION and event.departure_next_day:
-        day += timedelta(days=1)
+    day = event_end_date(event) if direction == Direction.DISPERSION else event.event_date
     return local_instant(day, clock, event.timezone)
 
 
@@ -47,10 +50,16 @@ def validate_schedule(event) -> None:
         raise ValueError("La date de l'événement ne peut pas être vide.")
     if event.departure_time is None:
         event.departure_next_day = False
+    event.end_date = event_end_date(event)
+    if event.end_date < event.event_date:
+        raise ValueError("La date de fin de l'événement ne peut pas précéder sa date de début.")
+    # Conservé uniquement pour les clients encore ouverts sur l'ancienne version.
+    event.departure_next_day = bool(event.departure_time is not None and
+                                    event.end_date == event.event_date + timedelta(days=1))
     arrival = schedule_target(event, Direction.RAMASSAGE)
     departure = schedule_target(event, Direction.DISPERSION)
     if arrival is not None and departure is not None and departure < arrival:
-        raise ValueError("La dispersion précède le rassemblement. Vérifie l'heure ou coche « Départ le lendemain ».")
+        raise ValueError("La fin de l'événement précède son début. Vérifie les dates et les heures.")
 
 
 def typical_schedule(event, direction: Direction, duration: int | None) -> dict:

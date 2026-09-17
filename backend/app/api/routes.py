@@ -47,7 +47,7 @@ from app.distance.google_places import GooglePlacesClient, GooglePlacesError
 from app.distance.haversine import haversine_m
 from app.distance.mapbox_directions import MapboxDirectionsError, MapboxDirectionsProvider
 from app.distance.scheduled_route import scheduled_traffic
-from app.event_schedule import timezone_for_location, typical_schedule, validate_schedule
+from app.event_schedule import event_end_date, timezone_for_location, typical_schedule, validate_schedule
 from app.distance.types import Coord, MatrixProviderWithGeometry, Polyline
 from app.geocoding.nominatim import NominatimClient
 from app.geocoding.types import GeocodingError
@@ -282,6 +282,7 @@ async def create_event(
         depot_lat=lat,
         depot_lon=lon,
         event_date=body.event_date,
+        end_date=(body.end_date or body.event_date) if "end_date" in body.model_fields_set else None,
         arrival_time=body.arrival_time,
         departure_time=body.departure_time,
         departure_next_day=body.departure_next_day,
@@ -426,8 +427,18 @@ async def update_event(
     # champs de frais. lat/lon exclus : gérés à part, ils alimentent
     # depot_lat/depot_lon, pas des colonnes du même nom.
     updates = body.model_dump(exclude_unset=True, exclude={"lat", "lon"})
-    schedule_fields = ("event_date", "arrival_time", "departure_time", "departure_next_day")
-    changed = {key for key in schedule_fields if key in updates and updates[key] != getattr(event, key)}
+    schedule_fields = ("event_date", "end_date", "arrival_time", "departure_time", "departure_next_day")
+    previous = {key: getattr(event, key, None) for key in schedule_fields}
+    previous["end_date"] = event_end_date(event)
+    new_start = updates.get("event_date", event.event_date)
+    if new_start is not None:
+        if "end_date" in updates:
+            updates["end_date"] = updates["end_date"] or new_start
+        elif "departure_next_day" in updates and updates["departure_next_day"] != event.departure_next_day:
+            updates["end_date"] = new_start + timedelta(days=bool(updates["departure_next_day"]))
+        else:
+            # Décaler la période entière si seule sa date de début change.
+            updates["end_date"] = new_start + (previous["end_date"] - event.event_date)
     address_changed = False
     old_timezone = event.timezone
     if "depot_address" in updates:
@@ -454,6 +465,7 @@ async def update_event(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    changed = {key for key in schedule_fields if getattr(event, key) != previous[key]}
     if address_changed or event.timezone != old_timezone:
         # Les tournées déjà calculées partent de l'ancien point de
         # rendez-vous : les garder afficherait un trajet faux. Le frontend
@@ -464,7 +476,7 @@ async def update_event(
         directions = []
         if changed & {"event_date", "arrival_time"}:
             directions.append(Direction.RAMASSAGE)
-        if changed & {"event_date", "departure_time", "departure_next_day"}:
+        if changed & {"event_date", "end_date", "departure_time", "departure_next_day"}:
             directions.append(Direction.DISPERSION)
         await db.execute(delete(SolutionRecord).where(
             SolutionRecord.event_id == event_id, SolutionRecord.direction.in_(directions)

@@ -34,6 +34,7 @@ export interface EventOut {
   depot_lat: number;
   depot_lon: number;
   event_date: string;
+  end_date?: string | null;
   arrival_time?: string | null;
   departure_time?: string | null;
   departure_next_day?: boolean;
@@ -203,9 +204,9 @@ export function createEvent(
     name: string;
     depot_address: string;
     event_date: string;
+    end_date?: string | null;
     arrival_time?: string | null;
     departure_time?: string | null;
-    departure_next_day?: boolean;
     description?: string | null;
     id?: string;
   } & AddressFields,
@@ -243,9 +244,9 @@ export function updateEvent(
     name?: string;
     depot_address?: string;
     event_date?: string;
+    end_date?: string | null;
     arrival_time?: string | null;
     departure_time?: string | null;
-    departure_next_day?: boolean;
     description?: string | null;
     fuel_price_per_l?: number | null;
     consumption_l_per_100km?: number | null;
