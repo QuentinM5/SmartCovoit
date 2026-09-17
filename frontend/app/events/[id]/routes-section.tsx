@@ -88,6 +88,10 @@ export function RoutesSection({
               distanceM={route.distance_m}
               durationS={route.duration_s}
               trafficDurationS={route.traffic_duration_s}
+              estimatedDepartureAt={route.estimated_departure_at}
+              estimatedArrivalAt={route.estimated_arrival_at}
+              estimationBasis={route.estimation_basis}
+              timezone={event.timezone}
               cost={routeCostEuros(route.distance_m, costParams)}
               currency={event.currency}
               stops={mapRoutes[index]?.stops ?? []}

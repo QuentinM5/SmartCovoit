@@ -25,6 +25,13 @@ function baseEvent(overrides: Partial<EventDetail> = {}): EventDetail {
 }
 
 describe("buildEventIcs", () => {
+  it("conserve la journée entière et ajoute les horaires au descriptif", () => {
+    const ics = buildEventIcs(baseEvent({ arrival_time: "18:00", departure_time: "02:00", departure_next_day: true, timezone: "America/Toronto" })).replace(/\r\n /g, "");
+    expect(ics).toContain("DTSTART;VALUE=DATE:20261224");
+    expect(ics).toContain("Arrivée au rassemblement : 18:00");
+    expect(ics).toContain("Départ pour la dispersion : 02:00 (lendemain)");
+    expect(ics).toContain("America/Toronto");
+  });
   it("utilise des fins de ligne CRLF", () => {
     const ics = buildEventIcs(baseEvent());
     expect(ics).toContain("\r\n");

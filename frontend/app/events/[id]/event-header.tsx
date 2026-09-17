@@ -9,6 +9,7 @@ import { QrCodeButton } from "@/components/qr-code-button";
 import { ErrorNote } from "@/components/ui";
 import { coverImageUrl, type EventDetail } from "@/lib/api";
 import { formatEventDate } from "@/lib/event-format";
+import { eventScheduleLines } from "@/lib/event-schedule";
 
 /**
  * Formulation neutre : tout ce qui est au-dessus de la barre de sens doit
@@ -60,6 +61,11 @@ export function EventHeader({
               <dd className="truncate">{event.depot_address}</dd>
             </div>
           </dl>
+          {(event.arrival_time || event.departure_time) && (
+            <div className="mt-3 space-y-1 text-sm">
+              {eventScheduleLines(event).map((line) => <p key={line} className="break-words">{line}</p>)}
+            </div>
+          )}
           <div className="mt-4 flex flex-wrap gap-2">
             <DownloadIcsButton event={event} />
             <CopyLinkButton />

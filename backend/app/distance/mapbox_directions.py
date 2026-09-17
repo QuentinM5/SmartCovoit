@@ -20,6 +20,7 @@ solveur, comme pour la géométrie OSRM (cf. fallback.py).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import httpx
 
@@ -45,7 +46,7 @@ class MapboxDirectionsProvider:
         self.access_token = access_token
         self.timeout_s = timeout_s
 
-    async def route(self, coords: list[Coord]) -> TrafficRoute:
+    async def route(self, coords: list[Coord], *, depart_at: datetime | None = None) -> TrafficRoute:
         if len(coords) < 2:
             return TrafficRoute(duration_s=0, geometry=[])
 
@@ -54,12 +55,8 @@ class MapboxDirectionsProvider:
         params = {
             "geometries": "geojson",
             "overview": "simplified",
-            # Sans departure_time explicite, driving-traffic se rabat sur des
-            # segments à trafic historique moyenné plutôt que la situation
-            # actuelle -- "now" déclenche la prise en compte du trafic live,
-            # même logique que Google Routes (cf. google_routes.py) mais sans
-            # exigence d'horodatage futur ici.
-            "depart_at": "now",
+            # Explicit instant: the venue timezone was resolved by the caller.
+            "depart_at": depart_at.isoformat() if depart_at is not None else "now",
             "access_token": self.access_token,
         }
 

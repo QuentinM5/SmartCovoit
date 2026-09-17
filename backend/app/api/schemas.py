@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date as date_
-from datetime import datetime
+from datetime import datetime, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -81,6 +81,9 @@ class EventCreate(Located):
     name: str = Field(min_length=1, max_length=200)
     depot_address: str = Field(min_length=1, max_length=500)
     event_date: date_
+    arrival_time: time | None = None
+    departure_time: time | None = None
+    departure_next_day: bool = False
     # Message libre de l'organisateur, saisi à la création — pas un fil de
     # discussion ouvert aux inscrits (cf. modèle `Event.description`).
     description: str | None = Field(default=None, max_length=2000)
@@ -100,6 +103,10 @@ class EventOut(BaseModel):
     depot_lat: float
     depot_lon: float
     event_date: date_
+    arrival_time: time | None = None
+    departure_time: time | None = None
+    departure_next_day: bool = False
+    timezone: str | None = None
     description: str | None
     created_at: datetime
     # Nul pour les événements créés avant l'authentification — cf. migration
@@ -133,6 +140,9 @@ class EventUpdate(Located):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     event_date: date_ | None = None
+    arrival_time: time | None = None
+    departure_time: time | None = None
+    departure_next_day: bool = False
     description: str | None = Field(default=None, max_length=2000)
     depot_address: str | None = Field(default=None, min_length=1, max_length=500)
     fuel_price_per_l: float | None = Field(default=None, gt=0)
@@ -270,6 +280,9 @@ class RouteOut(BaseModel):
     driver_name: str
     distance_m: int
     duration_s: int | None = None
+    estimated_departure_at: datetime | None = None
+    estimated_arrival_at: datetime | None = None
+    estimation_basis: Literal["traffic", "typical"] | None = None
     # Durée avec trafic, obtenue séparément du solveur (cf. solve_event et
     # MapboxDirectionsProvider) : le solveur affecte sur une matrice sans
     # trafic, ce champ reflète le "pars à telle heure" réel pour cette

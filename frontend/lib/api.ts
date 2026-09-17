@@ -34,6 +34,10 @@ export interface EventOut {
   depot_lat: number;
   depot_lon: number;
   event_date: string;
+  arrival_time?: string | null;
+  departure_time?: string | null;
+  departure_next_day?: boolean;
+  timezone?: string | null;
   /** Message libre de l'organisateur, saisi à la création — pas un fil de
    * discussion ouvert aux inscrits. */
   description: string | null;
@@ -109,6 +113,9 @@ export interface Route {
    * `duration_s`.
    */
   traffic_duration_s?: number | null;
+  estimated_departure_at?: string | null;
+  estimated_arrival_at?: string | null;
+  estimation_basis?: "traffic" | "typical" | null;
   stops: Stop[];
   /**
    * Tracé routier réel, suite de points [lat, lon]. Absent quand OSRM n'est pas
@@ -196,6 +203,9 @@ export function createEvent(
     name: string;
     depot_address: string;
     event_date: string;
+    arrival_time?: string | null;
+    departure_time?: string | null;
+    departure_next_day?: boolean;
     description?: string | null;
     id?: string;
   } & AddressFields,
@@ -233,6 +243,9 @@ export function updateEvent(
     name?: string;
     depot_address?: string;
     event_date?: string;
+    arrival_time?: string | null;
+    departure_time?: string | null;
+    departure_next_day?: boolean;
     description?: string | null;
     fuel_price_per_l?: number | null;
     consumption_l_per_100km?: number | null;

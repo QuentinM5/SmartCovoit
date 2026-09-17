@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import date as date_
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Time, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -71,6 +71,10 @@ class Event(Base):
     depot_lat: Mapped[float] = mapped_column(Float)
     depot_lon: Mapped[float] = mapped_column(Float)
     event_date: Mapped[date_] = mapped_column(Date)
+    arrival_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    departure_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    departure_next_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    timezone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Message libre de l'organisateur, saisi à la création (pas un fil de
     # discussion ouvert aux inscrits) — consignes de rendez-vous, etc.
     description: Mapped[str | None] = mapped_column(String(2000), nullable=True)

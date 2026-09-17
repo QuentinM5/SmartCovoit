@@ -46,6 +46,8 @@ from app.db.models import AccessRequest, Driver, Event, EventLog, Passenger, Sol
 from app.distance.google_places import GooglePlacesClient, GooglePlacesError
 from app.distance.haversine import haversine_m
 from app.distance.mapbox_directions import MapboxDirectionsError, MapboxDirectionsProvider
+from app.distance.scheduled_route import scheduled_traffic
+from app.event_schedule import timezone_for_location, typical_schedule, validate_schedule
 from app.distance.types import Coord, MatrixProviderWithGeometry, Polyline
 from app.geocoding.nominatim import NominatimClient
 from app.geocoding.types import GeocodingError
@@ -280,9 +282,17 @@ async def create_event(
         depot_lat=lat,
         depot_lon=lon,
         event_date=body.event_date,
+        arrival_time=body.arrival_time,
+        departure_time=body.departure_time,
+        departure_next_day=body.departure_next_day,
         description=body.description,
         owner_id=current_user.id,
     )
+    try:
+        event.timezone = timezone_for_location(lat, lon)
+        validate_schedule(event)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.add(event)
     log_event(db, "event_created", instance=settings.instance_name, event_id=event_id, user_id=current_user.id)
     try:
@@ -416,11 +426,15 @@ async def update_event(
     # champs de frais. lat/lon exclus : gérés à part, ils alimentent
     # depot_lat/depot_lon, pas des colonnes du même nom.
     updates = body.model_dump(exclude_unset=True, exclude={"lat", "lon"})
-    address_changed = "depot_address" in updates
-    if address_changed:
+    schedule_fields = ("event_date", "arrival_time", "departure_time", "departure_next_day")
+    changed = {key for key in schedule_fields if key in updates and updates[key] != getattr(event, key)}
+    address_changed = False
+    old_timezone = event.timezone
+    if "depot_address" in updates:
         if not updates["depot_address"]:
             raise HTTPException(status_code=422, detail="L'adresse ne peut pas être vide.")
         lat, lon = await _locate_or_422(geocoder, body.depot_address, body.coords)
+        address_changed = (body.depot_address, lat, lon) != (event.depot_address, event.depot_lat, event.depot_lon)
         updates["depot_lat"] = lat
         updates["depot_lon"] = lon
     # Contrairement à currency/fuel_price_per_l, `access_mode` n'a pas de
@@ -433,12 +447,28 @@ async def update_event(
     for field, value in updates.items():
         setattr(event, field, value)
 
-    if address_changed:
+    try:
+        if address_changed or event.timezone is None:
+            event.timezone = timezone_for_location(event.depot_lat, event.depot_lon)
+        validate_schedule(event)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if address_changed or event.timezone != old_timezone:
         # Les tournées déjà calculées partent de l'ancien point de
         # rendez-vous : les garder afficherait un trajet faux. Le frontend
         # le détecte comme n'importe quelle absence de solution (404 sur
         # GET .../solution), même chemin que pour une suppression d'inscrit.
         await db.execute(delete(SolutionRecord).where(SolutionRecord.event_id == event_id))
+    elif changed:
+        directions = []
+        if changed & {"event_date", "arrival_time"}:
+            directions.append(Direction.RAMASSAGE)
+        if changed & {"event_date", "departure_time", "departure_next_day"}:
+            directions.append(Direction.DISPERSION)
+        await db.execute(delete(SolutionRecord).where(
+            SolutionRecord.event_id == event_id, SolutionRecord.direction.in_(directions)
+        ))
 
     log_event(db, "event_updated", instance=settings.instance_name, event_id=event_id, user_id=current_user.id)
     await db.commit()
@@ -1091,21 +1121,25 @@ async def solve_event(
     # pas ouvrir 40 requêtes d'un coup.
     geometry_semaphore = asyncio.Semaphore(4)
 
-    async def _bounded_route_geometry(route: SolverRoute) -> tuple[Polyline | None, int | None]:
+    async def _bounded_route_geometry(route: SolverRoute) -> tuple[Polyline | None, int | None, dict]:
         async with geometry_semaphore:
             route_coords = [coords[stop.node] for stop in route.stops]
+            schedule = typical_schedule(event, direction, route.duration_s)
             # Mapbox Directions donne à la fois le trafic et le tracé, avec
             # un budget de requêtes bien plus généreux (facturé à la requête,
             # pas à l'élément) : quand il est configuré, il prime sur le
             # tracé OSRM/Google pour CETTE tournée précise.
             if directions_provider is not None:
                 try:
-                    traffic_route = await directions_provider.route(route_coords)
-                    return traffic_route.geometry, traffic_route.duration_s
+                    traffic_route, traffic_schedule = await scheduled_traffic(
+                        directions_provider, route_coords, event, direction, route.duration_s
+                    )
+                    if traffic_route is not None:
+                        return traffic_route.geometry, traffic_route.duration_s, traffic_schedule
                 except MapboxDirectionsError as exc:
                     logger.warning("Trafic/tracé Mapbox indisponible, repli tracé matrice : %s", exc)
             geometry = await matrix_provider.route_geometry(route_coords)
-            return geometry, None
+            return geometry, None, schedule
 
     geometry_results = await asyncio.gather(
         *(_bounded_route_geometry(route) for route in solution.routes)
@@ -1118,6 +1152,7 @@ async def solve_event(
             distance_m=route.distance_m,
             duration_s=route.duration_s,
             traffic_duration_s=traffic_duration_s,
+            **schedule,
             geometry=geometry,
             stops=[
                 schemas.StopOut(
@@ -1134,7 +1169,7 @@ async def solve_event(
                 for stop in route.stops
             ],
         )
-        for route, (geometry, traffic_duration_s) in zip(solution.routes, geometry_results)
+        for route, (geometry, traffic_duration_s, schedule) in zip(solution.routes, geometry_results)
     ]
 
     record = SolutionRecord(
@@ -1394,6 +1429,7 @@ async def move_stop(
         driver_name=target_route.driver_name,
         distance_m=target_distance,
         duration_s=target_duration,
+        **typical_schedule(event, direction, target_duration),
         stops=new_target_stops,
         geometry=target_geometry,
     )
@@ -1417,6 +1453,7 @@ async def move_stop(
             driver_name=source_route.driver_name,
             distance_m=source_distance,
             duration_s=source_duration,
+            **typical_schedule(event, direction, source_duration),
             stops=new_source_stops,
             geometry=source_geometry,
         )

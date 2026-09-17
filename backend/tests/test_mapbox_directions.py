@@ -7,6 +7,7 @@ lever, c'est l'appelant qui absorbe).
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -19,6 +20,19 @@ DIRECTIONS_URL_RE = re.compile(r"https://api\.mapbox\.com/directions/v5/mapbox/d
 
 PARIS = Coord(48.8566, 2.3522)
 LYON = Coord(45.7640, 4.8357)
+
+
+@pytest.mark.parametrize("depart_at,expected", [
+    (None, "now"),
+    (datetime(2026, 9, 19, 22, tzinfo=timezone.utc), "2026-09-19T22:00:00+00:00"),
+])
+async def test_request_uses_explicit_departure_or_current_traffic_default(depart_at, expected):
+    with respx.mock() as router:
+        request = router.get(DIRECTIONS_URL_RE).mock(return_value=httpx.Response(200, json={
+            "code": "Ok", "routes": [{"duration": 60, "geometry": {"coordinates": [[2, 48], [3, 49]]}}],
+        }))
+        await MapboxDirectionsProvider(access_token="tok").route([PARIS, LYON], depart_at=depart_at)
+        assert request.calls.last.request.url.params["depart_at"] == expected
 
 
 async def test_single_coordinate_is_trivial_without_network_call():

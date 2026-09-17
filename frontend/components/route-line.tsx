@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { ExternalLink, GripVertical } from "lucide-react";
 import { ROUTE_COLORS } from "@/components/route-map";
 import { formatMoney } from "@/lib/cost";
+import { formatRouteInstant } from "@/lib/event-schedule";
 import type { DragInfo, DragStartParams } from "@/lib/use-passenger-drag";
 import {
   formatDistance,
@@ -31,6 +32,10 @@ export function RouteLine({
   distanceM,
   durationS,
   trafficDurationS,
+  estimatedDepartureAt,
+  estimatedArrivalAt,
+  estimationBasis,
+  timezone,
   cost,
   currency,
   stops,
@@ -52,6 +57,10 @@ export function RouteLine({
    * par le solveur, sans trafic). Prioritaire sur `durationS` à l'affichage
    * quand elle est disponible. */
   trafficDurationS?: number | null;
+  estimatedDepartureAt?: string | null;
+  estimatedArrivalAt?: string | null;
+  estimationBasis?: "traffic" | "typical" | null;
+  timezone?: string | null;
   /** Coût estimé de cette tournée (barème de l'événement) — absent si aucun
    * partage de frais n'est configuré. */
   cost?: number | null;
@@ -75,6 +84,8 @@ export function RouteLine({
   const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
   const mapsUrl = googleMapsDirectionsUrl(stops);
   const displayDurationS = trafficDurationS ?? durationS;
+  const departureLabel = formatRouteInstant(estimatedDepartureAt, timezone);
+  const arrivalLabel = formatRouteInstant(estimatedArrivalAt, timezone);
   const passengerCount = stops.filter((s) => s.kind === "passenger").length;
   const truncated = Math.max(0, stops.length - 2 - MAX_WAYPOINTS);
   const overCapacity = passengerCount > seats;
@@ -145,6 +156,14 @@ export function RouteLine({
           )}
         </p>
       </header>
+
+      {(departureLabel || arrivalLabel) && (
+        <div className="mt-2 text-xs text-muted">
+          {departureLabel && <p>Départ estimé : {departureLabel}</p>}
+          {arrivalLabel && <p>Arrivée estimée : {arrivalLabel}</p>}
+          <p className="break-words">Heure locale · {timezone} · {estimationBasis === "traffic" ? "trafic prévu" : "sans trafic"}</p>
+        </div>
+      )}
 
       {pendingOvercapacity && (
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-xs text-danger">

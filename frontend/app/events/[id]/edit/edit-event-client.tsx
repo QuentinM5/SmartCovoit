@@ -40,6 +40,9 @@ export function EditEventClient({ id }: { id: string }) {
       name: values.name,
       depot_address: values.depot.address,
       event_date: values.eventDate,
+      arrival_time: values.arrivalTime || null,
+      departure_time: values.departureTime || null,
+      departure_next_day: values.departureNextDay,
       description: values.description.trim() || null,
       lat: values.depot.lat,
       lon: values.depot.lon,
@@ -98,8 +101,7 @@ export function EditEventClient({ id }: { id: string }) {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Modifier l&apos;événement</h1>
             <p className="mt-2 text-sm text-muted">
-              Changer l&apos;adresse de rendez-vous efface les trajets déjà calculés : ils partaient de
-              l&apos;ancien point.
+              Changer le lieu, la date ou un horaire efface les trajets concernés : recalcule-les ensuite.
             </p>
           </div>
 
@@ -107,6 +109,9 @@ export function EditEventClient({ id }: { id: string }) {
             initialValues={{
               name: event.name,
               eventDate: event.event_date,
+              arrivalTime: event.arrival_time ?? "",
+              departureTime: event.departure_time ?? "",
+              departureNextDay: event.departure_next_day ?? false,
               description: event.description ?? "",
               depot: { address: event.depot_address, lat: event.depot_lat, lon: event.depot_lon },
             }}
@@ -164,6 +169,9 @@ function DuplicateSection({ event }: { event: EventDetail }) {
         name: values.name,
         depot_address: values.depot.address,
         event_date: values.eventDate,
+        arrival_time: values.arrivalTime || null,
+        departure_time: values.departureTime || null,
+        departure_next_day: values.departureNextDay,
         description: values.description.trim() || null,
         lat: values.depot.lat,
         lon: values.depot.lon,
@@ -253,6 +261,9 @@ function DuplicateSection({ event }: { event: EventDetail }) {
               // le nouvel événement, `EventForm` bloque déjà l'envoi tant
               // qu'elle n'est pas resaisie.
               eventDate: "",
+              arrivalTime: event.arrival_time ?? "",
+              departureTime: event.departure_time ?? "",
+              departureNextDay: event.departure_next_day ?? false,
               description: event.description ?? "",
               depot: { address: event.depot_address, lat: event.depot_lat, lon: event.depot_lon },
             }}

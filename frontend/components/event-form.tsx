@@ -8,6 +8,9 @@ import { networkMessage } from "@/lib/event-format";
 export interface EventFormValues {
   name: string;
   eventDate: string;
+  arrivalTime: string;
+  departureTime: string;
+  departureNextDay: boolean;
   description: string;
   depot: AddressValue;
 }
@@ -31,6 +34,9 @@ export function EventForm({
 }) {
   const [name, setName] = useState(initialValues?.name ?? "");
   const [eventDate, setEventDate] = useState(initialValues?.eventDate ?? "");
+  const [arrivalTime, setArrivalTime] = useState(initialValues?.arrivalTime?.slice(0, 5) ?? "");
+  const [departureTime, setDepartureTime] = useState(initialValues?.departureTime?.slice(0, 5) ?? "");
+  const [departureNextDay, setDepartureNextDay] = useState(initialValues?.departureNextDay ?? false);
   const [description, setDescription] = useState(initialValues?.description ?? "");
   const [depot, setDepot] = useState<AddressValue>(
     initialValues?.depot ?? { address: "", lat: null, lon: null },
@@ -45,9 +51,13 @@ export function EventForm({
     e.preventDefault();
     if (depotIncomplete || !eventDate || submitting) return;
     setError(null);
+    if (arrivalTime && departureTime && !departureNextDay && departureTime < arrivalTime) {
+      setError("Le départ pour la dispersion précède l’arrivée. Coche « Départ le lendemain » si nécessaire.");
+      return;
+    }
     setSubmitting(true);
     try {
-      await onSubmit({ name, eventDate, description, depot });
+      await onSubmit({ name, eventDate, arrivalTime, departureTime, departureNextDay: !!departureTime && departureNextDay, description, depot });
       // Pas de `setSubmitting(false)` ici : un onSubmit réussi navigue
       // généralement ailleurs (création ou retour à la page événement) —
       // le remettre juste avant le démontage ne ferait que clignoter.
@@ -78,6 +88,23 @@ export function EventForm({
           className={`${inputClass} tabular font-mono`}
         />
       </Field>
+
+      <div className="flex flex-col gap-4">
+        <p className="text-xs text-muted">Horaires facultatifs, en heure locale du lieu de l’événement.</p>
+        <Field label="Heure d’arrivée au rassemblement — facultatif">
+          <input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className={`${inputClass} min-w-0 tabular font-mono`} />
+        </Field>
+        <Field label="Heure de départ pour la dispersion — facultatif">
+          <input type="time" value={departureTime} onChange={(e) => {
+            setDepartureTime(e.target.value);
+            if (!e.target.value) setDepartureNextDay(false);
+          }} className={`${inputClass} min-w-0 tabular font-mono`} />
+        </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={departureNextDay && !!departureTime} disabled={!departureTime} onChange={(e) => setDepartureNextDay(e.target.checked)} />
+          Départ le lendemain
+        </label>
+      </div>
 
       <Field label="Adresse de l'événement" hint="Là où tout le monde se retrouve.">
         <AddressInput

@@ -6,6 +6,7 @@
 
 import type { EventDetail } from "@/lib/api";
 import { SITE_URL } from "@/lib/site";
+import { eventScheduleLines } from "@/lib/event-schedule";
 
 const CRLF = "\r\n";
 // Marge sous 76 (limite RFC) : les lignes se replient à un multiple d'octets
@@ -80,7 +81,7 @@ export function buildEventIcs(event: EventDetail): string {
     `LOCATION:${escapeText(event.depot_address)}`,
     `GEO:${event.depot_lat};${event.depot_lon}`,
     `DESCRIPTION:${escapeText(
-      [event.description, `${SITE_URL}/events/${event.id}`].filter(Boolean).join("\n\n"),
+      [event.description, eventScheduleLines(event).join("\n"), `${SITE_URL}/events/${event.id}`].filter(Boolean).join("\n\n"),
     )}`,
     "END:VEVENT",
     "END:VCALENDAR",
