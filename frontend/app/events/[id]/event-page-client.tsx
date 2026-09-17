@@ -25,7 +25,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { DirectionTabs } from "@/components/direction";
-import { Button, ButtonLink, ErrorNote, Header } from "@/components/ui";
+import { Button, ButtonLink, ErrorNote, Header, Skeleton } from "@/components/ui";
 import { consumeNewEventSeed } from "@/lib/new-event-seed";
 import { networkMessage, moveStopOptimistic } from "@/lib/event-format";
 import { resolveStops } from "@/lib/route";
@@ -474,7 +474,14 @@ export function EventPageClient({ id }: { id: string }) {
     return (
       <>
         <Header back />
-        <main className="mx-auto w-full max-w-3xl px-5 py-14 text-sm text-muted">Chargement…</main>
+        <main
+          className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-5 py-8 sm:py-12"
+          aria-label="Chargement de l'événement"
+        >
+          <Skeleton className="h-9 w-2/3" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-40" />
+        </main>
       </>
     );
   }

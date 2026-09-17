@@ -48,6 +48,24 @@
     background-color: var(--color-paper);
     color: var(--color-ink);
     -webkit-text-size-adjust: 100%;
+    /* Un lien d'ancre (ex. "Retour" du footer, cf. plus tard) glisse plutôt
+       que de sauter — cassé par la règle prefers-reduced-motion ci-dessous,
+       qui repasse cette propriété à `auto`, pas seulement les animations. */
+    scroll-behavior: smooth;
+  }
+
+  /* Un titre d'une syllabe seule sur sa propre ligne casse la lecture — plus
+     visible ici que sur un site généraliste, les titres de cette app tenant
+     souvent en une phrase longue (cf. page d'accueil). `pretty` sur le corps
+     de texte : moins strict, coûte moins cher sur un paragraphe entier. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 
   body {
@@ -116,7 +134,30 @@
   animation: rise 380ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
 }
 
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* États de chargement : un bloc de la forme du contenu final plutôt qu'un
+   spinner générique, pour que l'œil sache déjà où le texte va apparaître
+   (cf. Skeleton dans components/ui.tsx). Dégradé plutôt qu'une couleur plate
+   pour suggérer un mouvement même figé sur une capture. */
+.animate-shimmer {
+  background: linear-gradient(90deg, var(--color-line) 25%, var(--color-surface) 50%, var(--color-line) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   *,
   *::before,
   *::after {

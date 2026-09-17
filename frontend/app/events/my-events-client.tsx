@@ -6,7 +6,7 @@ import { Share2 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { getMyEvents, getMyImpact, type Impact, type MyEvent } from "@/lib/api";
 import { formatEventDate, networkMessage } from "@/lib/event-format";
-import { ErrorNote, Header } from "@/components/ui";
+import { ErrorNote, Header, Skeleton } from "@/components/ui";
 import { LoginPrompt } from "@/app/events/[id]/event-notices";
 
 export function MyEventsPageClient() {
@@ -49,7 +49,11 @@ export function MyEventsPageClient() {
             <ErrorNote>{error}</ErrorNote>
           </div>
         ) : events === null ? (
-          <p className="mt-8 text-sm text-muted">Chargement…</p>
+          <div className="mt-8 flex flex-col gap-3" aria-label="Chargement de tes événements">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-[70px] rounded-lg" />
+            ))}
+          </div>
         ) : events.length === 0 ? (
           <p className="mt-8 text-sm text-muted">
             Aucun événement pour l&apos;instant.{" "}
@@ -83,7 +87,7 @@ function EventGroup({ title, events }: { title: string; events: MyEvent[] }) {
             <Link
               href={`/events/${event.id}`}
               data-surface
-              className="block rounded-lg border border-line bg-surface p-4 transition hover:border-ink"
+              className="block rounded-lg border border-line bg-surface p-4 transition duration-150 ease-out hover:border-ink hover:shadow-sm active:scale-[0.99]"
             >
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <span className="font-medium">{event.name}</span>

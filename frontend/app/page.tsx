@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { createEvent } from "@/lib/api";
 import { EventForm, type EventFormValues } from "@/components/event-form";
+import { DirectionGlyph } from "@/components/direction";
 import { ButtonLink, Header } from "@/components/ui";
 import { writeNewEventSeed } from "@/lib/new-event-seed";
 
@@ -75,12 +76,20 @@ export default function HomePage() {
     <>
       <Header />
 
-      <main className="mx-auto w-full max-w-3xl px-5 py-10 sm:py-14">
+      <main className="mx-auto w-full max-w-3xl px-5 py-12 sm:py-20">
         <div className="mx-auto max-w-lg">
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          {/* Les deux mêmes glyphes que la barre de sens sur une page
+              événement (cf. components/direction.tsx) : le concept se
+              montre avant même de se lire, avec le vocabulaire visuel que
+              l'utilisateur retrouvera partout ensuite dans l'app. */}
+          <div className="flex items-center gap-2" aria-hidden="true">
+            <DirectionGlyph direction="ramassage" animated className="h-9 w-14 shrink-0 text-inbound" />
+            <DirectionGlyph direction="dispersion" animated className="h-9 w-14 shrink-0 text-outbound" />
+          </div>
+          <h1 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">
             Organise les trajets du groupe, aller comme retour.
           </h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted">
+          <p className="mt-4 max-w-md text-base leading-relaxed text-muted">
             Crée l&apos;événement, partage le lien. Chacun s&apos;inscrit avec son adresse, et les
             trajets se calculent tout seuls, au plus court pour l&apos;ensemble du groupe.
           </p>
@@ -118,7 +127,42 @@ export default function HomePage() {
             />
           </div>
         )}
+
+        {/* Trois étapes en colonne, pas trois cartes identiques : une liste
+            numérotée se lit comme une séquence, ce que l'app fait vraiment,
+            plutôt que comme trois arguments de vente interchangeables. */}
+        <ol className="mx-auto mt-16 flex max-w-lg flex-col gap-6 border-t border-line pt-10 sm:mt-20">
+          <HowStep
+            n={1}
+            title="Créer l'événement"
+            text="Adresse du point de rendez-vous, date, un mot pour le groupe si besoin."
+          />
+          <HowStep
+            n={2}
+            title="Partager le lien"
+            text="Chacun s'inscrit comme conducteur ou passager, avec sa propre adresse."
+          />
+          <HowStep
+            n={3}
+            title="Calculer les trajets"
+            text="Qui prend qui, et dans quel ordre : l'affectation qui minimise la route totale du groupe."
+          />
+        </ol>
       </main>
     </>
+  );
+}
+
+function HowStep({ n, title, text }: { n: number; title: string; text: string }) {
+  return (
+    <li className="flex gap-4">
+      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-line font-mono text-xs text-muted">
+        {n}
+      </span>
+      <div>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-0.5 text-sm leading-relaxed text-muted">{text}</p>
+      </div>
+    </li>
   );
 }

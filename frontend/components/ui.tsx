@@ -81,7 +81,7 @@ export function Button({
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "quiet" }) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45";
+    "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition duration-150 ease-out active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100";
   const styles =
     variant === "primary"
       ? "bg-ink text-paper hover:opacity-85"
@@ -97,6 +97,16 @@ export function Button({
       {children}
     </button>
   );
+}
+
+/**
+ * Bloc de la forme du contenu final plutôt qu'un spinner : l'œil sait déjà
+ * où le texte va apparaître, et la mise en page ne saute pas au chargement
+ * (cf. .animate-shimmer, globals.css). `rounded` par défaut, personnalisable
+ * pour un cercle (avatar) ou une forme plus large (carte).
+ */
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div aria-hidden="true" className={`animate-shimmer rounded-md ${className}`} />;
 }
 
 export function ErrorNote({ children }: { children: ReactNode }) {
@@ -122,7 +132,8 @@ export function ButtonLink({
   variant?: "primary" | "quiet";
   className?: string;
 }) {
-  const base = "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition";
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition duration-150 ease-out active:scale-[0.98]";
   const styles =
     variant === "primary" ? "bg-ink text-paper hover:opacity-85" : "border border-line bg-surface hover:border-ink";
 
