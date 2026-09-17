@@ -61,3 +61,25 @@ la limite de trois appels par tournée n'est pas un plafond mensuel du compte Ma
 
 Le backend local peut pointer vers la base partagée de production : ne pas
 confondre le SQL hors ligne de l'étape 1 avec une migration réellement appliquée.
+
+### État du 17 septembre 2026
+
+- Horaires : `6eea937` sur `design/ui-polish-2026-09` ; livraison incluant aussi
+  le correctif parallèle des couvertures `288217e`, conservé sur les deux backends.
+- Migration `0009` appliquée sur la base partagée ; sept fuseaux renseignés,
+  aucune résolution en échec.
+- NAS : ancienne image conservée sous `infra-backend:before-hours-20260917` et
+  anciens fichiers dans `/mnt/Main/apps/smartcovoit-backups/before-hours-20260917.tar.gz`.
+- Heroku : `288217e` déployé. Le contrôle croisé a révélé une différence de
+  `JWT_SECRET` ; le secours a été aligné sur le primaire. Les jetons précédemment
+  émis par l'ancienne clé Heroku nécessitent une reconnexion ; ceux du NAS restent valides.
+- Retour arrière frontend : version `9f6e18f3-e770-46f9-a878-11a73a8680d5`.
+- Frontend publié : `1642b203-9900-49b6-946e-d137ae6ff052`, confirmé actif à 100 %.
+- Contrôles en production : création, lecture et modification entre NAS, Heroku
+  et Worker ; calculs aller et retour avec Mapbox à l'heure prévue ; lendemain,
+  invalidation par sens et effacement des horaires. Compte et événement de test
+  supprimés. Page HTTP et nouveaux champs dans les scripts réellement servis vérifiés.
+- Validation locale : 158 tests backend pour les horaires, puis 5 tests du
+  correctif de couverture ; 67 tests frontend, TypeScript, lint et build réussis.
+  La vérification visuelle n'a pas été réalisée : aucun navigateur disponible
+  dans le runtime Browser de cette session.

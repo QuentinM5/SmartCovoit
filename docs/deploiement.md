@@ -168,6 +168,7 @@ Versions de référence (garder à jour en cas de changement majeur) :
 
 | Version | Contenu |
 |---|---|
+| `9f6e18f3-e770-46f9-a878-11a73a8680d5` | Avant l'ajout des horaires optionnels et des estimations de trafic à l'heure de l'événement. |
 | `7cb6f570-25c9-4062-9eb4-ab4c68ad1b21` | Refonte initiale de la page événement, avant les correctifs noms longs, sections repliables et métro. |
 | `388185a2-568d-4509-bedb-c228cf1de0ed` | Version active avant la refonte de la page événement : point de retour arrière immédiat. |
 | `e9e7cad5-8682-4510-912e-408b70585e81` | Onglets aller/retour fusionnés + bloc « Qui est tout près », **sans** la passe de finition visuelle. Point de retour sûr avant la branche `design/ui-polish-2026-09`. |
