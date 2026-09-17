@@ -151,6 +151,33 @@ celle du Worker (vérifié dans le bundle JS envoyé au navigateur).
 sans souci ici, mais WSL serait recommandé si des problèmes apparaissent
 plus tard.
 
+### Revenir à une version précédente du frontend
+
+Cloudflare conserve chaque version déployée : le retour arrière est
+instantané et ne demande aucun rebuild (donc il fonctionne même si la
+machine de build est indisponible ou si le code local a changé depuis).
+
+```bash
+cd frontend
+npx wrangler deployments list          # versions déployées, la plus récente en bas
+npx wrangler versions list             # toutes les versions, y compris celles jamais mises en production
+npx wrangler versions deploy <id>@100% # remet cette version à 100 % du trafic
+```
+
+Versions de référence (garder à jour en cas de changement majeur) :
+
+| Version | Contenu |
+|---|---|
+| `e9e7cad5-8682-4510-912e-408b70585e81` | Onglets aller/retour fusionnés + bloc « Qui est tout près », **sans** la passe de finition visuelle. Point de retour sûr avant la branche `design/ui-polish-2026-09`. |
+
+⚠️ `npm run upload` (au lieu de `npm run deploy`) publie une version avec
+son URL de preview sans toucher au trafic de production — pratique en
+théorie, mais l'URL de preview d'une version sert le nouveau code avec le
+routage d'assets de la version *active*, ce qui casse le rendu côté
+navigateur sur une app OpenNext. Pour faire relire un changement visuel,
+déployer pour de vrai et prévoir le retour arrière ci-dessus est plus
+fiable.
+
 ### Domaine personnalisé `smartcovoit.qmeyer.fr` — fait ✅
 
 Remplace l'URL `*.workers.dev` comme adresse publique du frontend
