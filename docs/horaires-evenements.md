@@ -91,3 +91,22 @@ confondre le SQL hors ligne de l'étape 1 avec une migration réellement appliqu
   correctif de couverture ; 67 tests frontend, TypeScript, lint et build réussis.
   La vérification visuelle n'a pas été réalisée : aucun navigateur disponible
   dans le runtime Browser de cette session.
+
+### Mise à jour : date de fin indépendante
+
+- Commit applicatif `d1115df`, déployé sur le NAS et Heroku ; migration `0010`
+  appliquée. Les sept événements existants ont une date de fin renseignée,
+  sans période incohérente.
+- La case « Départ le lendemain » est remplacée par une date de fin. Les
+  champs horaires portent désormais les libellés début/fin de l'événement,
+  et le texte d'aide demandé a été retiré.
+- Frontend actif à 100 % : `df657923-7145-4648-93f3-4f5ab297514d`.
+  Retour arrière frontend : `1642b203-9900-49b6-946e-d137ae6ff052`.
+- NAS : sauvegarde `infra-backend:before-end-date-20260917` et archive
+  `/mnt/Main/apps/smartcovoit-backups/before-end-date-20260917.tar.gz`.
+- Validation : 179 tests backend, 73 frontend, TypeScript, lint et compilation.
+  Contrôle API sur événement temporaire : défaut au même jour, fin trois jours
+  plus tard utilisée par Mapbox, invalidation de la dispersion seule, effacement
+  des heures conservant les dates et refus d'une fin antérieure au début.
+  Données de test supprimées ; nouveaux libellés et suppressions vérifiés dans
+  les fichiers réellement servis par le site.
