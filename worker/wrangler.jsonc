@@ -5,17 +5,19 @@
   "compatibility_date": "2025-01-01",
 
   // PRIMARY_API_URL = instance TrueNAS (OSRM réel), FALLBACK_API_URL =
-  // instance Railway (repli Haversine). Toutes deux configurées ici, jamais
-  // en dur dans le code — cf. docs/deploiement.md.
+  // instance Heroku (repli Mapbox, cf. backend/app/distance/fallback.py --
+  // pas d'OSRM sur cette instance, c'est précisément ce qui la fait
+  // basculer sur Mapbox plutôt que sur Haversine). Toutes deux configurées
+  // ici, jamais en dur dans le code — cf. docs/deploiement.md.
   //
   // REQUEST_TIMEOUT_MS : filet de sécurité si le primaire reste sans
   // réponse. Doit largement couvrir SOLVER_TIME_LIMIT_S (10s) + l'appel
-  // Google Routes + les tracés OSRM par tournée sur un /solve à plusieurs
-  // passagers — 12s s'est révélé trop court en pratique (bascule vers
-  // Railway, qui répond mais sans OSRM : trafic correct, tracé absent).
+  // Mapbox + les tracés Mapbox/OSRM par tournée sur un /solve à plusieurs
+  // passagers — 12s s'est révélé trop court en pratique (bascule vers le
+  // secours plus tôt que nécessaire).
   "vars": {
     "PRIMARY_API_URL": "https://smartcovoitlocalapi.qmeyer.fr",
-    "FALLBACK_API_URL": "https://smartcovoit-production.up.railway.app",
+    "FALLBACK_API_URL": "https://smartcovoit-5a6d8a97ebf8.herokuapp.com",
     "REQUEST_TIMEOUT_MS": "25000"
   },
 

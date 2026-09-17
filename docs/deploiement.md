@@ -99,7 +99,7 @@ lecture authentifiée rejouée sur le secours, cf. `worker/src/failover-policy.t
 qui rejoue les méthodes sûres). Seule la valeur utilisée en développement
 local doit rester différente de celle de production.
 
-**`<à compléter avec l'URL fournie par Heroku après déploiement>`**
+**`https://smartcovoit-5a6d8a97ebf8.herokuapp.com`** (fait ✅)
 
 ## 4. Worker Cloudflare (répartiteur) — fait ✅
 
@@ -201,7 +201,7 @@ sitemap, robots.txt) pointe sur ce domaine depuis le déploiement du
 | `JWT_SECRET` | les deux, **obligatoire**, **valeur identique sur TrueNAS et Heroku** | Valeur aléatoire (`python -c "import secrets; print(secrets.token_urlsafe(32))"`), différente seulement de celle utilisée en développement local, jamais commitée — le backend refuse de démarrer si absente. Doit être la même sur les deux instances de production : une session ouverte sur l'une doit rester valide si une bascule de failover la fait vérifier par l'autre |
 | `GOOGLE_OAUTH_CLIENT_ID` | les deux (optionnel) | Identifiant client OAuth Google (public, pas un secret) — vide = connexion Google désactivée côté backend. Créé dans Google Cloud Console (API Credentials > OAuth 2.0 Client ID > type "Web application"), avec les deux origines JavaScript autorisées (`https://smartcovoit.qmeyer.fr` et `https://smartcovoit-frontend.quentinmeyer57570.workers.dev`, cf. les deux origines frontend live) |
 | `PRIMARY_API_URL` | Worker répartiteur | `https://smartcovoitlocalapi.qmeyer.fr` (fait ✅) |
-| `FALLBACK_API_URL` | Worker répartiteur | URL `*.herokuapp.com` de l'app de secours (à faire) |
+| `FALLBACK_API_URL` | Worker répartiteur | `https://smartcovoit-5a6d8a97ebf8.herokuapp.com` (fait ✅) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `https://smartcovoit-worker.quentinmeyer57570.workers.dev` (fait ✅) |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Frontend | Même valeur que `GOOGLE_OAUTH_CLIENT_ID` — exposée au navigateur pour afficher le bouton Google, ce n'est pas un secret |
 | `INSTANCE_NAME` | les deux (optionnel) | `truenas` / `heroku` — distincte sur chaque hôte, sinon `/health` et le journal d'événements ne permettent pas de savoir laquelle des deux instances a répondu |
